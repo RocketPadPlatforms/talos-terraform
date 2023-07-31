@@ -11,7 +11,3 @@ terraform {
     }
   }
 }
-
-provider "talos" {}
-
-provider "jsonnet" {}
