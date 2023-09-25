@@ -22,7 +22,20 @@ variable "node_data" {
   })
 }
 
-variable "config_patches" {
-  description = "A list of Talos config patche files"
+variable "config_patches_controlplane" {
+  description = "A list of Talos config patches files for controlplane nodes"
   type        = list(string)
+  default     = []
+}
+
+variable "config_patches_worker" {
+  description = "A list of Talos config patches files for worker nodes"
+  type        = list(string)
+  default     = []
+}
+
+variable "config_patches_all" {
+  description = "A list of Talos config patches files for all nodes"
+  type        = list(string)
+  default     = []
 }

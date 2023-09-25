@@ -31,9 +31,17 @@ module "talos" {
       }
     }
   }
-  config_patches = [
-    "path/to/my-patch-a.yaml",
-    "path/to/my-patch-b.yaml"
+  config_patches_controlplane = [
+    "path/to/my-patch-cp-a.yaml",
+    "path/to/my-patch-cp-b.yaml"
+  ]
+  config_patches_worker = [
+    "path/to/my-patch-worker-a.yaml",
+    "path/to/my-patch-worker-b.yaml"
+  ]
+  config_patches_all = [
+    "path/to/my-patch-all-a.yaml",
+    "path/to/my-patch-all-b.yaml"
   ]
 }
 ```
