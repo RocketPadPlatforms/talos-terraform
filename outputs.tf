@@ -3,6 +3,11 @@ output "talosconfig" {
   sensitive = true
 }
 
+output "talos_machine_secrets" {
+  value     = resource.talos_machine_secrets.this.cluster.secret
+  sensitive = true
+}
+
 output "kubeconfig" {
   value     = data.talos_cluster_kubeconfig.this.kubeconfig_raw
   sensitive = true
