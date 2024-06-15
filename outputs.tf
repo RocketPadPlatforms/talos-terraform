@@ -4,7 +4,7 @@ output "talosconfig" {
 }
 
 output "talos_machine_secrets" {
-  value     = resource.talos_machine_secrets.this.cluster.secret
+  value     = resource.talos_machine_secrets.this.machine_secrets
   sensitive = true
 }
 
