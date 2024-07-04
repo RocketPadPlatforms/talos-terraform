@@ -33,7 +33,7 @@ resource "talos_machine_configuration_apply" "controlplane" {
             disk = each.value.install_disk
           }
           network = {
-            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.workers), each.key) + 1) : each.value.hostname
+            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.controlplanes), each.key) + 1) : each.value.hostname
           }
         }
       })
