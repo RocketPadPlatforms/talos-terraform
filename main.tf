@@ -27,11 +27,27 @@ resource "talos_machine_configuration_apply" "controlplane" {
   node                        = each.key
   config_patches = concat(
     [
-      templatefile("${path.module}/templates/install-disk-and-hostname.yaml.tmpl", {
-        hostname     = each.value.hostname == null ? format("%s-cp-%s", var.cluster_name, index(keys(var.node_data.controlplanes), each.key)) : each.value.hostname
-        install_disk = each.value.install_disk
+      yamlencode({
+        machine = {
+          install = {
+            disk = each.value.install_disk
+          }
+          network = {
+            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.workers), each.key) + 1) : each.value.hostname
+          }
+        }
       })
     ],
+    // Set install image only if its configured
+    each.value.install_image != null ? [
+      yamlencode({
+        machine = {
+          install = {
+            image = each.value.install_image
+          }
+        }
+      })
+    ] : [],
     var.config_patches_controlplane,
     var.config_patches_all
   )
@@ -44,11 +60,27 @@ resource "talos_machine_configuration_apply" "worker" {
   node                        = each.key
   config_patches = concat(
     [
-      templatefile("${path.module}/templates/install-disk-and-hostname.yaml.tmpl", {
-        hostname     = each.value.hostname == null ? format("%s-worker-%s", var.cluster_name, index(keys(var.node_data.workers), each.key)) : each.value.hostname
-        install_disk = each.value.install_disk
+      yamlencode({
+        machine = {
+          install = {
+            disk = each.value.install_disk
+          }
+          network = {
+            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.workers), each.key) + 1) : each.value.hostname
+          }
+        }
       })
     ],
+    // Set install image only if its configured
+    each.value.install_image != null ? [
+      yamlencode({
+        machine = {
+          install = {
+            image = each.value.install_image
+          }
+        }
+      })
+    ] : [],
     var.config_patches_worker,
     var.config_patches_all
   )
