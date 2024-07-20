@@ -1,0 +1,23 @@
+include:
+  - component: $CI_SERVER_FQDN/components/opentofu/job-templates@0.24.0
+    inputs:
+      # The version must currently be specified explicitly as an input,
+      # to find the correctly associated images. # This can be removed
+      # once https://gitlab.com/gitlab-org/gitlab/-/issues/438275 is solved.
+      version: "0.24.0"
+      opentofu_version: "1.7.2"
+  - project: rocketpadplatforms/gitlab-ci-templates
+    ref: 9e92f02bf9397cd6d9cf276efcb81c5efdd6597d
+    file: release.gitlab-ci.yml
+
+
+stages:
+  - .pre
+  - validate
+  - release
+
+fmt:
+  extends: [.opentofu:fmt]
+
+validate:
+  extends: [.opentofu:validate]
