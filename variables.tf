@@ -12,14 +12,14 @@ variable "node_data" {
   description = "A map of node data"
   type = object({
     controlplanes = map(object({
+      ip_address    = string
       install_disk  = string
       install_image = optional(string)
-      hostname      = optional(string)
     }))
     workers = map(object({
+      ip_address    = string
       install_disk  = string
       install_image = optional(string)
-      hostname      = optional(string)
     }))
   })
 }

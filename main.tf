@@ -17,14 +17,14 @@ data "talos_machine_configuration" "worker" {
 data "talos_client_configuration" "this" {
   cluster_name         = var.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = [for k, v in var.node_data.controlplanes : k]
+  endpoints            = [for k, v in var.node_data.controlplanes : v.ip_address]
 }
 
 resource "talos_machine_configuration_apply" "controlplane" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
   for_each                    = var.node_data.controlplanes
-  node                        = each.key
+  node                        = each.value.ip_address
   config_patches = concat(
     [
       yamlencode({
@@ -33,7 +33,7 @@ resource "talos_machine_configuration_apply" "controlplane" {
             disk = each.value.install_disk
           }
           network = {
-            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.controlplanes), each.key) + 1) : each.value.hostname
+            hostname = each.key
           }
         }
       })
@@ -57,7 +57,7 @@ resource "talos_machine_configuration_apply" "worker" {
   client_configuration        = talos_machine_secrets.this.client_configuration
   machine_configuration_input = data.talos_machine_configuration.worker.machine_configuration
   for_each                    = var.node_data.workers
-  node                        = each.key
+  node                        = each.value.ip_address
   config_patches = concat(
     [
       yamlencode({
@@ -66,7 +66,7 @@ resource "talos_machine_configuration_apply" "worker" {
             disk = each.value.install_disk
           }
           network = {
-            hostname = each.value.hostname == null ? format("%s-w-%s", var.cluster_name, index(keys(var.node_data.workers), each.key) + 1) : each.value.hostname
+            hostname = each.key
           }
         }
       })
