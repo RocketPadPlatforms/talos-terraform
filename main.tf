@@ -29,6 +29,7 @@ resource "talos_machine_configuration_apply" "controlplane" {
     [
       yamlencode({
         machine = {
+          certSANs = [each.value.ip_address]
           install = {
             disk = each.value.install_disk
           }
@@ -62,6 +63,7 @@ resource "talos_machine_configuration_apply" "worker" {
     [
       yamlencode({
         machine = {
+          certSANs = [each.value.ip_address]
           install = {
             disk = each.value.install_disk
           }
