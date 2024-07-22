@@ -7,6 +7,8 @@ data "talos_machine_configuration" "controlplane" {
   talos_version      = var.talos_version
   machine_type       = "controlplane"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
+  docs               = false
+  examples           = false
 }
 
 data "talos_machine_configuration" "worker" {
@@ -16,6 +18,8 @@ data "talos_machine_configuration" "worker" {
   talos_version      = var.talos_version
   machine_type       = "worker"
   machine_secrets    = talos_machine_secrets.this.machine_secrets
+  docs               = false
+  examples           = false
 }
 
 data "talos_client_configuration" "this" {
