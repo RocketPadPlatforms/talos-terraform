@@ -8,6 +8,12 @@ variable "cluster_endpoint" {
   type        = string
 }
 
+variable "talos_version" {
+  description = "The version of Talos to use"
+  type        = string
+  default     = "v1.7"
+}
+
 variable "node_data" {
   description = "A map of node data"
   type = object({
