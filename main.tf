@@ -102,12 +102,12 @@ resource "talos_machine_bootstrap" "this" {
   depends_on = [talos_machine_configuration_apply.controlplane]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = [for k, v in var.node_data.controlplanes : k][0]
+  node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
 }
 
 data "talos_cluster_kubeconfig" "this" {
   depends_on = [talos_machine_bootstrap.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = [for k, v in var.node_data.controlplanes : k][0]
+  node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
 }
