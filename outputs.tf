@@ -9,11 +9,11 @@ output "talos_machine_secrets" {
 }
 
 output "kubeconfig" {
-  value     = data.talos_cluster_kubeconfig.this.kubeconfig_raw
+  value     = resource.talos_cluster_kubeconfig.this.kubeconfig_raw
   sensitive = true
 }
 
 output "kubernetes_client_configuration" {
-  value     = data.talos_cluster_kubeconfig.this.kubernetes_client_configuration
+  value     = resource.talos_cluster_kubeconfig.this.kubernetes_client_configuration
   sensitive = true
 }
