@@ -119,3 +119,9 @@ resource "talos_cluster_kubeconfig" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
 }
+
+# For the migration of the Talos provider to version 0.6.0
+moved {
+  from = data.talos_cluster_kubeconfig.this
+  to   = talos_cluster_kubeconfig.this
+}
