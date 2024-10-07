@@ -63,8 +63,9 @@ resource "talos_machine_configuration_apply" "controlplane" {
     var.config_patches_all
   )
   on_destroy = {
-    reset  = true
-    reboot = true
+    reset    = true
+    reboot   = true
+    graceful = false
   }
 }
 
@@ -101,8 +102,9 @@ resource "talos_machine_configuration_apply" "worker" {
     var.config_patches_all
   )
   on_destroy = {
-    reset  = true
-    reboot = true
+    reset    = true
+    reboot   = true
+    graceful = false
   }
 }
 
