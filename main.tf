@@ -28,6 +28,7 @@ data "talos_client_configuration" "this" {
   cluster_name         = var.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = [for k, v in var.node_data.controlplanes : v.ip_address]
+  nodes                = [for k, v in var.node_data.controlplanes : v.ip_address]
 }
 
 resource "talos_machine_configuration_apply" "controlplane" {
