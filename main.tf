@@ -116,8 +116,15 @@ resource "talos_machine_bootstrap" "this" {
   node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
 }
 
-resource "talos_cluster_kubeconfig" "this" {
+resource "time_sleep" "wait_30_seconds" {
   depends_on = [talos_machine_bootstrap.this]
+
+  create_duration  = "30s"
+  destroy_duration = "0s"
+}
+
+resource "talos_cluster_kubeconfig" "this" {
+  depends_on = [time_sleep.wait_30_seconds]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
