@@ -73,7 +73,8 @@ resource "talos_machine_configuration_apply" "controlplane" {
       })
     ] : [],
     var.config_patches_controlplane,
-    var.config_patches_all
+    var.config_patches_all,
+    each.value.talos_patches != null ? each.value.talos_patches : []
   )
   on_destroy = {
     reset    = true
@@ -112,7 +113,8 @@ resource "talos_machine_configuration_apply" "worker" {
       })
     ] : [],
     var.config_patches_worker,
-    var.config_patches_all
+    var.config_patches_all,
+    each.value.talos_patches != null ? each.value.talos_patches : []
   )
   on_destroy = {
     reset    = true

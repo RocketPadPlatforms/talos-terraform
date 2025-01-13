@@ -34,11 +34,13 @@ variable "node_data" {
       ip_address    = string
       install_disk  = string
       install_image = optional(string)
+      talos_patches = optional(list(string))
     }))
     workers = map(object({
       ip_address    = string
       install_disk  = string
       install_image = optional(string)
+      talos_patches = optional(list(string))
     }))
   })
 }
