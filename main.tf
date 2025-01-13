@@ -1,10 +1,22 @@
+locals {
+  // List of ip addresses of all control plane nodes
+  controlplane_ip_addresses = [for each in var.node_data.controlplanes : each.ip_address]
+
+  // Address of the controlplane
+  controlplane_address = var.controlplane_address != null ? var.controlplane_address : local.controlplane_ip_addresses[0]
+
+  // Talos cluster endpoint
+  // If `var.cluster_endpoint` is not set it will build the endpoint based on the ip address of the first control plane node
+  cluster_endpoint = var.cluster_endpoint != null ? var.cluster_endpoint : format("https://%s:6443", local.controlplane_address)
+}
+
 resource "talos_machine_secrets" "this" {
   talos_version = var.talos_version
 }
 
 data "talos_machine_configuration" "controlplane" {
   cluster_name       = var.cluster_name
-  cluster_endpoint   = var.cluster_endpoint
+  cluster_endpoint   = local.cluster_endpoint
   kubernetes_version = var.kubernetes_version
   talos_version      = var.talos_version
   machine_type       = "controlplane"
@@ -15,7 +27,7 @@ data "talos_machine_configuration" "controlplane" {
 
 data "talos_machine_configuration" "worker" {
   cluster_name       = var.cluster_name
-  cluster_endpoint   = var.cluster_endpoint
+  cluster_endpoint   = local.cluster_endpoint
   kubernetes_version = var.kubernetes_version
   talos_version      = var.talos_version
   machine_type       = "worker"
@@ -27,8 +39,8 @@ data "talos_machine_configuration" "worker" {
 data "talos_client_configuration" "this" {
   cluster_name         = var.cluster_name
   client_configuration = talos_machine_secrets.this.client_configuration
-  endpoints            = [for k, v in var.node_data.controlplanes : v.ip_address]
-  nodes                = [for k, v in var.node_data.controlplanes : v.ip_address]
+  endpoints            = local.controlplane_ip_addresses
+  nodes                = local.controlplane_ip_addresses
 }
 
 resource "talos_machine_configuration_apply" "controlplane" {
@@ -113,7 +125,7 @@ resource "talos_machine_bootstrap" "this" {
   depends_on = [talos_machine_configuration_apply.controlplane]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
+  node                 = local.controlplane_address
 }
 
 resource "time_sleep" "wait_30_seconds" {
@@ -127,7 +139,7 @@ resource "talos_cluster_kubeconfig" "this" {
   depends_on = [time_sleep.wait_30_seconds]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = [for k, v in var.node_data.controlplanes : v.ip_address][0]
+  node                 = local.controlplane_address
 }
 
 # For the migration of the Talos provider to version 0.6.0

@@ -6,6 +6,13 @@ variable "cluster_name" {
 variable "cluster_endpoint" {
   description = "The endpoint for the Talos cluster"
   type        = string
+  default     = null
+}
+
+variable "controlplane_address" {
+  description = "The address of the controlplane. Could be the address of a load balancer."
+  type        = string
+  default     = null
 }
 
 variable "kubernetes_version" {
