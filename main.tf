@@ -14,6 +14,20 @@ resource "talos_machine_secrets" "this" {
   talos_version = var.talos_version
 }
 
+data "talos_machine_disks" "controlplane" {
+  for_each             = var.node_data.controlplanes
+  client_configuration = talos_machine_secrets.this.client_configuration
+  node                 = each.value.ip_address
+  filters              = each.value.install_disk_selector
+}
+
+data "talos_machine_disks" "worker" {
+  for_each             = var.node_data.workers
+  client_configuration = talos_machine_secrets.this.client_configuration
+  node                 = each.value.ip_address
+  filters              = each.value.install_disk_selector
+}
+
 data "talos_machine_configuration" "controlplane" {
   cluster_name       = var.cluster_name
   cluster_endpoint   = local.cluster_endpoint
@@ -54,7 +68,7 @@ resource "talos_machine_configuration_apply" "controlplane" {
         machine = {
           certSANs = [each.value.ip_address]
           install = {
-            disk = each.value.install_disk
+            disk = each.value.install_disk != null ? each.value.install_disk : data.talos_machine_disks.controlplane[each.key].disks[0].name
           }
           network = {
             hostname = each.key
@@ -94,7 +108,7 @@ resource "talos_machine_configuration_apply" "worker" {
         machine = {
           certSANs = [each.value.ip_address]
           install = {
-            disk = each.value.install_disk
+            disk = each.value.install_disk != null ? each.value.install_disk : data.talos_machine_disks.worker[each.key].disks[0].name
           }
           network = {
             hostname = each.key

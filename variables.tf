@@ -31,16 +31,18 @@ variable "node_data" {
   description = "A map of node data"
   type = object({
     controlplanes = map(object({
-      ip_address    = string
-      install_disk  = string
-      install_image = optional(string)
-      talos_patches = optional(list(string))
+      ip_address            = string
+      install_disk          = optional(string)
+      install_disk_selector = optional(map(string))
+      install_image         = optional(string)
+      talos_patches         = optional(list(string))
     }))
     workers = map(object({
-      ip_address    = string
-      install_disk  = string
-      install_image = optional(string)
-      talos_patches = optional(list(string))
+      ip_address            = string
+      install_disk          = optional(string)
+      install_disk_selector = optional(map(string))
+      install_image         = optional(string)
+      talos_patches         = optional(list(string))
     }))
   })
 }
