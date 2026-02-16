@@ -57,9 +57,6 @@ resource "talos_machine_configuration_apply" "controlplane" {
             disk         = try(each.value.install_disk, null)
             diskSelector = try(each.value.install_disk_selector, null)
           }
-          network = {
-            hostname = each.key
-          }
         }
       })
     ],
@@ -97,9 +94,6 @@ resource "talos_machine_configuration_apply" "worker" {
           install = {
             disk         = try(each.value.install_disk, null)
             diskSelector = try(each.value.install_disk_selector, null)
-          }
-          network = {
-            hostname = each.key
           }
         }
       })
