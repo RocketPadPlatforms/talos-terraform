@@ -5,9 +5,13 @@ locals {
   controlplane_ip_addresses = [for each in var.node_data.controlplanes : each.ip_address]
 
   // Address of the controlplane
-  // Used as the cluster endpoint and bootstrap/kubeconfig node; first
-  // controlplane IP is the fallback when no load balancer address is set.
+  // Used as the cluster endpoint; first controlplane IP is the fallback
+  // when no load balancer address is set.
   controlplane_address = var.controlplane_address != null ? var.controlplane_address : local.controlplane_ip_addresses[0]
+
+  // Bootstrap and kubeconfig always target a real control plane node: a load
+  // balancer/VIP has no healthy backends before the cluster is bootstrapped.
+  bootstrap_node = local.controlplane_ip_addresses[0]
 
   // Talos cluster endpoint
   // If `var.cluster_endpoint` is not set it will build the endpoint based on the ip address of the first control plane node
@@ -130,7 +134,7 @@ resource "talos_machine_bootstrap" "this" {
   depends_on = [talos_machine_configuration_apply.controlplane]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = local.controlplane_address
+  node                 = local.bootstrap_node
 }
 
 resource "time_sleep" "wait_30_seconds" {
@@ -144,7 +148,7 @@ resource "talos_cluster_kubeconfig" "this" {
   depends_on = [time_sleep.wait_30_seconds]
 
   client_configuration = talos_machine_secrets.this.client_configuration
-  node                 = local.controlplane_address
+  node                 = local.bootstrap_node
 }
 
 # For the migration of the Talos provider to version 0.6.0
