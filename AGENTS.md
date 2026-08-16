@@ -95,7 +95,8 @@ graph TD
   C --> E[apply: talos_machine_configuration_apply controlplane]
   D --> F[apply: talos_machine_configuration_apply worker]
   E --> G[bootstrap: talos_machine_bootstrap]
-  G --> H[sleep: time_sleep 30s]
+  G --> H[data: talos_cluster_health]
+  F --> H
   H --> I[kubeconfig: talos_cluster_kubeconfig]
   A --> J[data: talos_client_configuration]
   J --> O[outputs: talosconfig]
@@ -112,9 +113,10 @@ settings, and the `config_patches_*` lists (`yamlencode` merged via
 `concat`). Each node gets its config applied via
 `talos_machine_configuration_apply`. The first controlplane address (or a
 load-balanced VIP in `controlplane_address` / `cluster_endpoint`) becomes the
-cluster endpoint; after apply the cluster is bootstrapped, a 30s settle
-`time_sleep` waits for the control plane, and `talos_cluster_kubeconfig`
-captures cluster access. Destroy resets and reboots nodes (graceful off).
+cluster endpoint; after apply the cluster is bootstrapped (against the first
+controlplane node), then `talos_cluster_health` polls until the control plane
+and Kubernetes are healthy, and `talos_cluster_kubeconfig` captures cluster
+access. Destroy resets and reboots nodes (graceful off).
 
 Cluster endpoint derivation: `cluster_endpoint` var, else
 `https://<controlplane_address>:6443`, else IP of first controlplane node.

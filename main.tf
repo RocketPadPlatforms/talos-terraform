@@ -137,15 +137,21 @@ resource "talos_machine_bootstrap" "this" {
   node                 = local.bootstrap_node
 }
 
-resource "time_sleep" "wait_30_seconds" {
-  depends_on = [talos_machine_bootstrap.this]
+data "talos_cluster_health" "this" {
+  depends_on = [talos_machine_configuration_apply.worker, talos_machine_bootstrap.this]
 
-  create_duration  = "30s"
-  destroy_duration = "0s"
+  client_configuration = talos_machine_secrets.this.client_configuration
+  endpoints            = local.controlplane_ip_addresses
+  control_plane_nodes  = local.controlplane_ip_addresses
+  worker_nodes         = [for each in var.node_data.workers : each.ip_address]
+
+  timeouts = {
+    read = "15m"
+  }
 }
 
 resource "talos_cluster_kubeconfig" "this" {
-  depends_on = [time_sleep.wait_30_seconds]
+  depends_on = [data.talos_cluster_health.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = local.bootstrap_node
