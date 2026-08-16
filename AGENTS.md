@@ -18,8 +18,7 @@ deployed in place. Node servers must already be booted into Talos maintenance mo
   maps, and patch-list inputs.
 - `outputs.tf` — Sensitive outputs: `talosconfig`, machine secrets, `kubeconfig`,
   and the Kubernetes client configuration.
-- `version.tf` — Provider requirements (`siderolabs/talos >= 0.10.1`,
-  `alxrem/jsonnet >= 2.2.0`).
+- `version.tf` — Provider requirements (`siderolabs/talos >= 0.10.1`).
 - `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`.
 - `.envrc` — Registers the flake dev shell with direnv (`use flake`).
 - `.gitlab-ci.yml` — GitLab CI: OpenTofu `fmt`/`validate` jobs via a remote job
