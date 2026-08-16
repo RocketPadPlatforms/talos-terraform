@@ -56,7 +56,10 @@ resource "talos_machine_configuration_apply" "controlplane" {
     [
       yamlencode({
         machine = {
-          certSANs = [each.value.ip_address]
+          // The cluster endpoint (load balancer/VIP or first controlplane) must
+          // be a SAN of every API server certificate for workers and clients to
+          // trust it over TLS. distinct() de-duplicates the single-node case.
+          certSANs = distinct([each.value.ip_address, local.controlplane_address])
           install = {
             disk         = try(each.value.install_disk, null)
             diskSelector = try(each.value.install_disk_selector, null)
