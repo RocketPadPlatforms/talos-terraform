@@ -93,26 +93,27 @@ graph TD
   A[You] -->|run module| B[secrets: talos_machine_secrets]
   B --> C[data: machine_configuration controlplane]
   B --> D[data: machine_configuration worker]
-  C --> E[apply: talos_machine_configuration_apply controlplane]
-  D --> F[apply: talos_machine_configuration_apply worker]
+  C --> E[apply: talos_machine_configuration_apply this]
+
+  D --> E
   E --> G[bootstrap: talos_machine_bootstrap]
-  G --> H[data: talos_cluster_health]
-  F --> H
+  E --> H[data: talos_cluster_health]
+  G --> H
   H --> I[kubeconfig: talos_cluster_kubeconfig]
   A --> J[data: talos_client_configuration]
   J --> O[outputs: talosconfig]
   B --> K[outputs: machine secrets]
   I --> L[outputs: kubeconfig / k8s client config]
   E -->|config_patches flatten| M[per-node patches]
-  F -->|config_patches flatten| M
 ```
 
 Flow: `talos_machine_secrets` generates cluster-sensitive material once.
 Machine configuration for controlplane and worker types is templated from
 cluster/version inputs, then per node combined with cert SANs, install
 settings, and the `config_patches_*` lists (`yamlencode` merged via
-`concat`). Each node gets its config applied via
-`talos_machine_configuration_apply`. The first controlplane address (or a
+`concat`). A single `talos_machine_configuration_apply` resource keyed over
+both roles applies each node's config, selecting the role-specific config
+source and patch list per node. The first controlplane address (or a
 load-balanced VIP in `controlplane_address` / `cluster_endpoint`) becomes the
 cluster endpoint; after apply the cluster is bootstrapped (against the first
 controlplane node), then `talos_cluster_health` polls until the control plane

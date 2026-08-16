@@ -51,11 +51,19 @@ data "talos_client_configuration" "this" {
   nodes                = local.controlplane_ip_addresses
 }
 
-resource "talos_machine_configuration_apply" "controlplane" {
-  client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.controlplane.machine_configuration
-  for_each                    = var.node_data.controlplanes
-  node                        = each.value.ip_address
+resource "talos_machine_configuration_apply" "this" {
+  for_each = merge(
+    { for name, node in var.node_data.controlplanes : "controlplane-${name}" => { role = "controlplane", node = node } },
+    { for name, node in var.node_data.workers : "worker-${name}" => { role = "worker", node = node } }
+  )
+
+  client_configuration = talos_machine_secrets.this.client_configuration
+  machine_configuration_input = (
+    each.value.role == "controlplane"
+    ? data.talos_machine_configuration.controlplane.machine_configuration
+    : data.talos_machine_configuration.worker.machine_configuration
+  )
+  node = each.value.node.ip_address
   config_patches = concat(
     [
       yamlencode({
@@ -63,65 +71,31 @@ resource "talos_machine_configuration_apply" "controlplane" {
           // The cluster endpoint (load balancer/VIP or first controlplane) must
           // be a SAN of every API server certificate for workers and clients to
           // trust it over TLS. distinct() de-duplicates the single-node case.
-          certSANs = distinct([each.value.ip_address, local.controlplane_address])
+          certSANs = (
+            each.value.role == "controlplane"
+            ? distinct([each.value.node.ip_address, local.controlplane_address])
+            : [each.value.node.ip_address]
+          )
           install = {
-            disk         = try(each.value.install_disk, null)
-            diskSelector = try(each.value.install_disk_selector, null)
+            disk         = each.value.node.install_disk
+            diskSelector = each.value.node.install_disk_selector
           }
         }
       })
     ],
     // Set install image only if its configured
-    each.value.install_image != null ? [
+    each.value.node.install_image != null ? [
       yamlencode({
         machine = {
           install = {
-            image = each.value.install_image
+            image = each.value.node.install_image
           }
         }
       })
     ] : [],
-    var.config_patches_controlplane,
+    each.value.role == "controlplane" ? var.config_patches_controlplane : var.config_patches_worker,
     var.config_patches_all,
-    each.value.talos_patches != null ? each.value.talos_patches : []
-  )
-  on_destroy = {
-    reset    = true
-    reboot   = true
-    graceful = false
-  }
-}
-
-resource "talos_machine_configuration_apply" "worker" {
-  client_configuration        = talos_machine_secrets.this.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.worker.machine_configuration
-  for_each                    = var.node_data.workers
-  node                        = each.value.ip_address
-  config_patches = concat(
-    [
-      yamlencode({
-        machine = {
-          certSANs = [each.value.ip_address]
-          install = {
-            disk         = try(each.value.install_disk, null)
-            diskSelector = try(each.value.install_disk_selector, null)
-          }
-        }
-      })
-    ],
-    // Set install image only if its configured
-    each.value.install_image != null ? [
-      yamlencode({
-        machine = {
-          install = {
-            image = each.value.install_image
-          }
-        }
-      })
-    ] : [],
-    var.config_patches_worker,
-    var.config_patches_all,
-    each.value.talos_patches != null ? each.value.talos_patches : []
+    each.value.node.talos_patches != null ? each.value.node.talos_patches : []
   )
   on_destroy = {
     reset    = true
@@ -131,14 +105,14 @@ resource "talos_machine_configuration_apply" "worker" {
 }
 
 resource "talos_machine_bootstrap" "this" {
-  depends_on = [talos_machine_configuration_apply.controlplane]
+  depends_on = [talos_machine_configuration_apply.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = local.bootstrap_node
 }
 
 data "talos_cluster_health" "this" {
-  depends_on = [talos_machine_configuration_apply.worker, talos_machine_bootstrap.this]
+  depends_on = [talos_machine_configuration_apply.this, talos_machine_bootstrap.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = local.controlplane_ip_addresses
