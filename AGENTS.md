@@ -68,7 +68,8 @@ opentofu destroy
 ```
 
 > TODO: no explicit `lint`, `test`, or `debug` commands exist beyond `fmt` and
-> `validate`. No Terraform cloud backend is configured; state lives locally.
+> `validate`. No Terraform cloud backend is configured; state lives locally —
+> consumers should use an encrypted backend (see [README.md](README.md)).
 
 # Code Style & Conventions
 
@@ -145,6 +146,9 @@ opentofu fmt -check -recursive && opentofu validate
   `sensitive` outputs to avoid plan/console exposure.
 - Cluster data flows are intended to run over TLS: the endpoint defaults to
   `https://...:6443`.
+- Consumers should use an encrypted remote backend and restrict state access;
+  see the Secure your state section in [README.md](README.md). This module
+  itself does not configure a backend (state lives with the consumer).
 
 > TODO: no dependency scanning (e.g. trivy, osv-scanner) or provider
 > signature/checksum policy is configured. No license file is present.
