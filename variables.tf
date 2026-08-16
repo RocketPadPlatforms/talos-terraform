@@ -45,6 +45,11 @@ variable "node_data" {
       talos_patches         = optional(list(string))
     }))
   })
+
+  validation {
+    condition     = length(var.node_data.controlplanes) > 0
+    error_message = "At least one controlplane node must be provided in node_data.controlplanes."
+  }
 }
 
 variable "config_patches_controlplane" {

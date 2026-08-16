@@ -1,8 +1,12 @@
 locals {
   // List of ip addresses of all control plane nodes
+  // `for_each` iterates maps in lexicographic-key order, so indexed access is
+  // deterministic. Non-empty is enforced by a validation on `var.node_data`.
   controlplane_ip_addresses = [for each in var.node_data.controlplanes : each.ip_address]
 
   // Address of the controlplane
+  // Used as the cluster endpoint and bootstrap/kubeconfig node; first
+  // controlplane IP is the fallback when no load balancer address is set.
   controlplane_address = var.controlplane_address != null ? var.controlplane_address : local.controlplane_ip_addresses[0]
 
   // Talos cluster endpoint
