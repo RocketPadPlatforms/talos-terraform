@@ -188,7 +188,8 @@ opentofu fmt -check -recursive && opentofu validate
 
 # Further Reading
 
-- [README.md](README.md) — module usage example and requirements.
+- [README.md](README.md) — module usage example, requirements, and talosconfig
+  renewal/recovery guidance.
 - [.gitlab-ci.yml](.gitlab-ci.yml) — CI pipeline definition (OpenTofu jobs +
   release workflow).
 - [main.tf](main.tf), [variables.tf](variables.tf), [outputs.tf](outputs.tf) —
