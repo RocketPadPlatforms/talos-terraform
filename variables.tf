@@ -32,18 +32,23 @@ variable "controlplane_address" {
 }
 
 variable "kubernetes_version" {
-  description = "The version of Kubernetes to use, e.g. `1.30.0`"
+  description = "The version of Kubernetes to use, e.g. `1.30.0` or `v1.32.0`"
   type        = string
   default     = null
 
   validation {
-    condition     = var.kubernetes_version == null || can(regex("^\\d+\\.\\d+", var.kubernetes_version))
-    error_message = "kubernetes_version must look like a version, e.g. 1.30.0."
+    condition     = var.kubernetes_version == null || can(regex("^v?\\d+\\.\\d+", var.kubernetes_version))
+    error_message = "kubernetes_version must look like a version, e.g. 1.30.0 or v1.32.0."
   }
 }
 
 variable "talos_version" {
-  description = "The version of Talos to use, e.g. `v1.7.6`"
+  description = <<-EOT
+    The Talos version contract used to generate secrets and machine configuration,
+    e.g. `v1.12` or `1.12.1`. Optional: the provider computes a default when unset.
+    This does not control the installed Talos version - set machine.install.image
+    via per-node install_image or config_patches for that.
+  EOT
   type        = string
   default     = null
 
