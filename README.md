@@ -16,13 +16,11 @@ module "talos" {
   source  = "path/to/talos"
 
   cluster_name = "my-cluster"
-  cluster_endpoint = "https://192.168.1.1:6443"
   node_data = {
     controlplanes = {
       "my-cluster-c1" = {
         ip_address   = "192.168.1.1"
         install_disk = "/dev/sda"
-        hostname     = "my-cluster-c1"
       }
     }
     workers = {
