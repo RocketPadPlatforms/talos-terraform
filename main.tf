@@ -130,9 +130,3 @@ resource "talos_cluster_kubeconfig" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = local.bootstrap_node
 }
-
-# For the migration of the Talos provider to version 0.6.0
-moved {
-  from = data.talos_cluster_kubeconfig.this
-  to   = talos_cluster_kubeconfig.this
-}
