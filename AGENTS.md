@@ -21,9 +21,11 @@ deployed in place. Node servers must already be booted into Talos maintenance mo
 - `version.tf` — Provider requirements (`siderolabs/talos >= 0.10.1`).
 - `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`.
 - `.envrc` — Registers the flake dev shell with direnv (`use flake`).
-- `.gitlab-ci.yml` — GitLab CI: OpenTofu `fmt`/`validate` jobs via a remote job
-  template component, plus a release pipeline.
-- `GitVersion.yml` — GitVersion config (Mainline mode) used by the release job.
+- `.github/workflows/ci.yml` — GitHub Actions CI: OpenTofu `fmt`/`validate` jobs
+  via reusable actions from `RocketPadPlatforms/github-actions`.
+- `.github/workflows/release-please.yml` — Tagged releases via release-please,
+  driven by Conventional Commits.
+- `renovate.json` — Mend-hosted Renovate config (dependency/version updates).
 - `README.md` — Module usage and requirements example.
 - `.gitignore` — Ignores local state, `.terraform/`, and all `*.tfvars`.
 - Local-only (ignored, not committed): `terraform.tfvars`, `terraform.tfstate`,
@@ -125,10 +127,9 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
 # Testing Strategy
 
 - No unit/integration/e2e tests exist in the repo.
-- CI validates the module statically via the OpenTofu job template component
-  (`.gitlab-ci.yml`):
-  - `fmt` job runs `opentofu fmt`.
-  - `validate` job runs `opentofu validate`.
+- CI validates the module statically via GitHub Actions (`.github/workflows/ci.yml`):
+  - `fmt` job runs `opentofu fmt -check -recursive`.
+  - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
 - Run the same checks locally:
 
 ```bash
@@ -151,7 +152,7 @@ opentofu fmt -check -recursive && opentofu validate
   itself does not configure a backend (state lives with the consumer).
 
 > TODO: no dependency scanning (e.g. trivy, osv-scanner) or provider
-> signature/checksum policy is configured. No license file is present.
+> signature/checksum policy is configured.
 > `terraform.tfvars` in the working tree currently contains values
 > (`192.168.13.x`) that look like a leftover test environment — do not commit.
 
@@ -165,8 +166,6 @@ opentofu fmt -check -recursive && opentofu validate
   user instruction; apply/destroy mutates live bare-metal infrastructure.
 - Do not pin/unpin provider versions without updating them coherently — version
   bumps are conventionally separate `chore(talos): ...` commits.
-- Keep generated/closed-source GitLab CI component inputs unmodified unless the
-  referenced template itself is being upgraded.
 - Preserve the `--check`/`-check` flag on `fmt` in CI; do not auto-rewrite HCL
   formatting silently.
 
@@ -190,7 +189,7 @@ opentofu fmt -check -recursive && opentofu validate
 
 - [README.md](README.md) — module usage example, requirements, and talosconfig
   renewal/recovery guidance.
-- [.gitlab-ci.yml](.gitlab-ci.yml) — CI pipeline definition (OpenTofu jobs +
-  release workflow).
+- [.github/workflows/ci.yml](.github/workflows/ci.yml) — CI pipeline
+  definition (OpenTofu `fmt`/`validate` jobs).
 - [main.tf](main.tf), [variables.tf](variables.tf), [outputs.tf](outputs.tf) —
   the complete module source.
