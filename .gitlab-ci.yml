@@ -1,5 +1,5 @@
 include:
-  - component: $CI_SERVER_FQDN/components/opentofu/job-templates@0.24.0
+  - component: $CI_SERVER_FQDN/components/opentofu/job-templates@4.9.0
     inputs:
       # The version must currently be specified explicitly as an input,
       # to find the correctly associated images. # This can be removed
