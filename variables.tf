@@ -111,3 +111,23 @@ variable "config_patches_all" {
   type        = list(string)
   default     = []
 }
+
+variable "enable_cluster_health_check" {
+  description = <<-EOT
+    Whether to wait for the cluster to report healthy (etcd quorum, all
+    nodes Ready, control plane static pods running, etc.) before creating
+    the kubeconfig. Defaults to true.
+
+    Disabling this is occasionally necessary when the health check's
+    assumptions don't hold for a given network topology: it requires the
+    Kubernetes Node object to report an address matching the corresponding
+    node_data.*.ip_address, which fails if machine.kubelet.nodeIP is
+    patched (via config_patches_all/_controlplane/_worker) to prefer a
+    different subnet than the one node_data.*.ip_address uses - e.g. when
+    node_data uses each node's public IP (so Terraform/talosctl stay
+    reachable from outside the cluster) but kubelet.nodeIP is pinned to a
+    private network for internal traffic.
+  EOT
+  type        = bool
+  default     = true
+}

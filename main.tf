@@ -112,6 +112,8 @@ resource "talos_machine_bootstrap" "this" {
 }
 
 data "talos_cluster_health" "this" {
+  count = var.enable_cluster_health_check ? 1 : 0
+
   depends_on = [talos_machine_configuration_apply.this, talos_machine_bootstrap.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
@@ -125,7 +127,12 @@ data "talos_cluster_health" "this" {
 }
 
 resource "talos_cluster_kubeconfig" "this" {
-  depends_on = [data.talos_cluster_health.this]
+  // Reference the whole (possibly zero-instance, per count above) data
+  // source rather than an indexed instance: depends_on requires a static
+  // list, and depending on "all instances" of a count = 0 data source is
+  // trivially satisfied, so this works whether the health check is
+  // enabled or not.
+  depends_on = [talos_machine_configuration_apply.this, talos_machine_bootstrap.this, data.talos_cluster_health.this]
 
   client_configuration = talos_machine_secrets.this.client_configuration
   node                 = local.bootstrap_node
