@@ -3,12 +3,16 @@
   "extends": ["config:recommended"],
   "labels": ["dependencies"],
   "semanticCommits": "enabled",
-  "semanticCommitType": "chore",
-  "semanticCommitScope": "deps",
+  "semanticCommitType": "deps",
   "nix": {
     "enabled": true
   },
   "packageRules": [
+    {
+      "description": "Updates that only touch CI files must not trigger a release.",
+      "matchFileNames": [".github/**"],
+      "semanticCommitType": "ci"
+    },
     {
       "matchManagers": ["terraform"],
       "matchDatasources": ["terraform-provider", "terraform-module"],
