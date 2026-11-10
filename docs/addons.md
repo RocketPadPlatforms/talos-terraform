@@ -48,7 +48,9 @@ puts the node under disk pressure.
 
 To use a dedicated disk for a group instead, add a `UserVolumeConfig` with the
 same name to the group's `config_patches`. Group patches apply after the
-module's, so it overrides the directory volume:
+module's, so it overrides the directory volume. Set `volumeType: partition`
+explicitly: the patch is merged onto the module's `volumeType: directory`, and
+Talos rejects `provisioning` on a directory volume.
 
 ```hcl
 config_patches = [
@@ -93,7 +95,8 @@ Rules:
 - Objects installed by hand before an addon was enabled are taken over by Talos
   on the first sync.
 - Turning off `local_path_provisioner` also removes its `UserVolumeConfig` from
-  the nodes.
+  the nodes. Back up the data of its PersistentVolumes first: it is not
+  documented whether Talos keeps the data under `/var/mnt/local-path-provisioner`.
 
 ## Updating vendored content
 
