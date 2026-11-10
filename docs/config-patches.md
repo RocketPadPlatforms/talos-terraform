@@ -16,6 +16,7 @@ For each node, patches apply from general to specific. Later patches win.
    6. `UserVolumeConfig` `local-path-provisioner` (when the `local_path_provisioner` addon is enabled)
    7. Controlplanes only: the [Cilium](cilium.md) documents (`KubeFlannelCNIConfig` delete, `KubeProxyConfig` disabled, `KubeInlineManifestConfig` `cilium`), then one `KubeInlineManifestConfig` per enabled [addon](addons.md)
    8. `VolumeConfig` `STATE` and `EPHEMERAL` (when the group sets [`disk_encryption`](security.md#disk-encryption))
+   9. `HostnameConfig` with the node's `hostname` and `auto` deleted (when the node sets [`hostname`](#hostnames))
 2. `config_patches` (cluster-wide)
 3. the group's `config_patches`
 4. the node's `config_patches`
@@ -99,6 +100,41 @@ taint stays. The module uses the working form for
 labels/annotations/taints patch, it removes only the generated controlplane
 taint. To clear taints yourself, add a `$patch: delete` patch in
 `config_patches`: it runs after the module's taints, so it removes those too.
+
+## Hostnames
+
+The base configuration sets `HostnameConfig` `auto: stable`, and Talos rejects a
+`HostnameConfig` with both `auto` and `hostname`. The module's patch for
+`node_groups.*.nodes.*.hostname` deletes `auto`. In your own patches:
+
+- On a node with `hostname`, another `hostname` replaces the module's value:
+
+  ```yaml
+  apiVersion: v1alpha1
+  kind: HostnameConfig
+  hostname: other-name
+  ```
+
+- On a node with `hostname`, going back to a generated hostname deletes the
+  module's value:
+
+  ```yaml
+  apiVersion: v1alpha1
+  kind: HostnameConfig
+  hostname:
+    $patch: delete
+  auto: stable
+  ```
+
+- On a node without `hostname`, setting one in a patch must delete `auto`:
+
+  ```yaml
+  apiVersion: v1alpha1
+  kind: HostnameConfig
+  auto:
+    $patch: delete
+  hostname: node-a
+  ```
 
 ## Known issues
 

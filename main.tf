@@ -6,6 +6,7 @@ locals {
         node_name  = node_name
         role       = group.role
         ip_address = node.ip_address
+        hostname   = node.hostname
         // coalesce() errors when both are null
         install_disk_match = node.install_disk_match != null ? node.install_disk_match : group.install_disk_match
         labels             = merge(group.labels, node.labels)
@@ -215,6 +216,15 @@ resource "talos_machine_configuration_apply" "this" {
     local.addon_patches_all,
     each.value.role == "controlplane" ? concat(local.cilium_patches_controlplane, local.addon_patches_controlplane) : [],
     local.disk_encryption_patches[each.value.group_name],
+    // The base config sets auto: stable, which Talos rejects next to hostname.
+    each.value.hostname != null ? [
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = { "$patch" = "delete" }
+        hostname   = each.value.hostname
+      })
+    ] : [],
     var.config_patches,
     each.value.group_patches,
     each.value.node_patches

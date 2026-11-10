@@ -29,6 +29,7 @@ node_groups = map(object({
   config_patches = optional(list(string), [])
   nodes = map(object({
     ip_address         = string
+    hostname           = optional(string)
     install_disk_match = optional(string)
     labels             = optional(map(string), {})
     annotations        = optional(map(string), {})
@@ -41,7 +42,8 @@ node_groups = map(object({
 See [Images](images.md) for `image`, [Disk selection](disk-selection.md) for
 `install_disk_match`, [Security](security.md#disk-encryption) for
 `disk_encryption`, [Config patches](config-patches.md) for `config_patches`
-and [Kubernetes nodes](kubernetes-nodes.md) for labels, annotations and taints.
+and [Kubernetes nodes](kubernetes-nodes.md) for labels, annotations, taints and
+`hostname`.
 
 ## Merge rules
 
@@ -50,6 +52,7 @@ and [Kubernetes nodes](kubernetes-nodes.md) for labels, annotations and taints.
 | `labels`, `annotations`, `taints` | Merged by key; the node wins on conflict |
 | `config_patches` | Appended: cluster, then group, then node |
 | `install_disk_match` | The node's value replaces the group's |
+| `hostname` | Node only |
 | `image`, `disk_encryption` | Group only |
 
 ## Example
@@ -97,6 +100,9 @@ node_groups = {
 - **The first controlplane** is the controlplane node whose name comes first
   lexicographically. It is used for the endpoint fallback, bootstrap and
   kubeconfig.
+- **`hostname` is optional.** Without it, Talos generates the hostname. Set
+  values must be lowercase RFC 1123 names, and their first labels unique across
+  groups. The node name is never used as the hostname.
 - At least one controlplane node is required.
 - **`disk_encryption` is fixed once nodes are provisioned.** Adding, removing
   or changing it on a group with running nodes makes them fail on their next

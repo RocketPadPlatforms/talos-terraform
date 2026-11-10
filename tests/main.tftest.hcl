@@ -972,3 +972,196 @@ run "validation_taint_effect" {
 
   expect_failures = [var.node_groups]
 }
+
+run "hostname" {
+  command = apply
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = {
+          cp1 = { ip_address = "10.0.0.1", hostname = "cp1.example.org" }
+          cp2 = { ip_address = "10.0.0.2" }
+          cp3 = {
+            ip_address     = "10.0.0.3"
+            hostname       = "cp3"
+            config_patches = [yamlencode({ apiVersion = "v1alpha1", kind = "HostnameConfig", hostname = "override" })]
+          }
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p) if try(yamldecode(p).kind, "") == "HostnameConfig"
+    ] == [{ apiVersion = "v1alpha1", kind = "HostnameConfig", auto = { "$patch" = "delete" }, hostname = "cp1.example.org" }]
+    error_message = "hostname should render a HostnameConfig that deletes auto."
+  }
+
+  assert {
+    condition = length([
+      for p in talos_machine_configuration_apply.this["controlplane-cp2"].config_patches :
+      p if try(yamldecode(p).kind, "") == "HostnameConfig"
+    ]) == 0
+    error_message = "Nodes without hostname must get no HostnameConfig."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp3"].config_patches :
+      yamldecode(p).hostname if try(yamldecode(p).kind, "") == "HostnameConfig"
+    ] == ["cp3", "override"]
+    error_message = "Node config_patches must come after the generated HostnameConfig."
+  }
+
+  assert {
+    condition = (
+      length(talos_machine_configuration_apply.this["controlplane-cp1"].config_patches)
+      == length(talos_machine_configuration_apply.this["controlplane-cp2"].config_patches) + 1
+    )
+    error_message = "hostname should add exactly one patch."
+  }
+}
+
+run "hostname_unset_not_unique" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { n1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "x" }
+        nodes = { n2 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+}
+
+run "hostname_short_name_valid" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { n1 = { ip_address = "10.0.0.1", hostname = "worker-1" } }
+      }
+    }
+  }
+}
+
+run "validation_hostname_unique" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { n1 = { ip_address = "10.0.0.1", hostname = "same" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "x" }
+        nodes = { n2 = { ip_address = "10.0.0.2", hostname = "same" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_hostname_uppercase" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1", hostname = "Node_1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_hostname_leading_dash" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1", hostname = "-a" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_hostname_empty_label" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1", hostname = "a..b" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_hostname_label_length" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1", hostname = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_hostname_unique_short_name" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { n1 = { ip_address = "10.0.0.1", hostname = "cp1.a.example" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "x" }
+        nodes = { n2 = { ip_address = "10.0.0.2", hostname = "cp1.b.example" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}

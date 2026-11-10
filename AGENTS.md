@@ -127,8 +127,8 @@ opentofu destroy
   `disk_encryption` (group only), `labels`, `annotations`, `taints`,
   `config_patches`.
 - `nodes` keys are node names, unique across all groups. Each node carries
-  `ip_address` plus optional `install_disk_match`, `labels`, `annotations`,
-  `taints`, `config_patches`.
+  `ip_address` plus optional `hostname` (node only), `install_disk_match`,
+  `labels`, `annotations`, `taints`, `config_patches`.
 - Node settings inherit from their group. `install_disk_match` is replaced by the
   node value; `labels`, `annotations`, and `taints` are merged with node keys
   winning.
@@ -136,7 +136,8 @@ opentofu destroy
   control-plane taint removal, `KubeNodeConfig`, `KubeletConfig`, addon
   `UserVolumeConfig`, then on control planes the Cilium and addon documents,
   then the `disk_encryption` `VolumeConfig` documents for `STATE` and
-  `EPHEMERAL`), then `config_patches`, then group `config_patches`, then node
+  `EPHEMERAL`, then `HostnameConfig` when the node sets `hostname`), then
+  `config_patches`, then group `config_patches`, then node
   `config_patches`. New generated patches go after the existing ones so tests'
   patch indexes stay stable. All
   patches are YAML strings, typically built with `yamlencode`.
@@ -199,11 +200,13 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
   files are read for real):
   - `apply` runs check generated config for a basic controlplane and worker
     setup, per-node overrides, scheduling and TLS settings, each addon, Cilium,
-    disk encryption per method, and the `manifests_sync_command` output.
+    disk encryption per method, node hostnames, and the
+    `manifests_sync_command` output.
   - `plan` runs check that invalid inputs are rejected (role, unique node
     names, image installer vs. version, talos_version floor, taint effect,
     `cni` name/configuration, Cilium without `kubernetes_version`,
-    `disk_encryption` method, KMS endpoint and tpm without SecureBoot).
+    `disk_encryption` method, KMS endpoint and tpm without SecureBoot,
+    hostname format and uniqueness).
 - CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
   - `fmt` job runs `opentofu fmt -check -recursive`.
   - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
@@ -272,6 +275,9 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
   carry their own encryption in user `VolumeConfig` patches.
 - `node_groups.*.labels`, `annotations`, `taints` (and per-node overrides) —
   Kubernetes node metadata applied via `KubeNodeConfig`.
+- `node_groups.*.nodes.*.hostname` — static hostname (and Kubernetes node
+  name) via a `HostnameConfig` that deletes the base config's `auto: stable`;
+  unset keeps the Talos-generated hostname.
 - `allow_scheduling_on_controlplanes` — removes the default control-plane
   NoSchedule taint.
 - `kubelet_server_tls_bootstrap` — enables kubelet serving certificate
