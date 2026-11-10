@@ -369,6 +369,136 @@ run "addons_tls_bootstrap_not_duplicated" {
   }
 }
 
+run "addons_local_path_provisioner" {
+  command = apply
+
+  variables {
+    addons = { local_path_provisioner = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        config_patches = [
+          yamlencode({
+            apiVersion = "v1alpha1"
+            kind       = "UserVolumeConfig"
+            name       = "local-path-provisioner"
+            volumeType = "partition"
+          })
+        ]
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for key in ["controlplane-cp1", "worker-w1"] : anytrue([
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        try(yamldecode(p).kind == "UserVolumeConfig" && yamldecode(p).name == "local-path-provisioner" && yamldecode(p).volumeType == "directory", false)
+      ])
+    ])
+    error_message = "All nodes should get the local-path-provisioner directory volume."
+  }
+
+  assert {
+    condition = (
+      index([for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches : try(yamldecode(p).volumeType, "")], "directory")
+      < index([for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches : try(yamldecode(p).volumeType, "")], "partition")
+    )
+    error_message = "Group patches must come after the module volume so they can override it."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ] == ["local-path-provisioner"]
+    error_message = "Controlplane should get the local-path-provisioner inline manifest."
+  }
+
+  assert {
+    condition = length([
+      for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
+      p if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ]) == 0
+    error_message = "Workers must not get inline manifests."
+  }
+
+  assert {
+    condition     = length([for d in split("\n---\n", local.local_path_provisioner_manifest) : d if trimspace(d) != ""]) == 9
+    error_message = "All 9 upstream documents must be kept."
+  }
+
+  assert {
+    condition = one([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      jsondecode(yamldecode(d).data["config.json"]).nodePathMap[0].paths if try(yamldecode(d).kind, "") == "ConfigMap"
+    ]) == ["/var/mnt/local-path-provisioner"]
+    error_message = "Provisioner path should be the Talos user volume mount."
+  }
+
+  assert {
+    condition = one([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      yamldecode(d).metadata.labels["pod-security.kubernetes.io/enforce"] if try(yamldecode(d).kind, "") == "Namespace"
+    ]) == "privileged"
+    error_message = "Namespace should allow privileged pods."
+  }
+
+  assert {
+    condition = !anytrue([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      can(yamldecode(d).metadata.annotations["storageclass.kubernetes.io/is-default-class"]) if try(yamldecode(d).kind, "") == "StorageClass"
+    ])
+    error_message = "StorageClass must not be default unless requested."
+  }
+
+  assert {
+    condition = (
+      one([for d in split("\n---\n", local.local_path_provisioner_manifest) : yamldecode(d) if try(yamldecode(d).kind, "") == "Deployment"])
+      == one([for d in split("\n---\n", file("deps/vendor/addons/local-path-provisioner/deploy/local-path-storage.yaml")) : yamldecode(d) if try(yamldecode(d).kind, "") == "Deployment"])
+    )
+    error_message = "Untouched documents must stay equal to upstream."
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(yamldecode(p).manifest == local.local_path_provisioner_manifest, false)
+    ])
+    error_message = "The inline manifest should carry the transformed manifest."
+  }
+}
+
+run "addons_local_path_provisioner_default_class" {
+  command = apply
+
+  variables {
+    addons = { local_path_provisioner = { enabled = true, default_storage_class = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  assert {
+    condition = one([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      yamldecode(d).metadata.annotations["storageclass.kubernetes.io/is-default-class"] if try(yamldecode(d).kind, "") == "StorageClass"
+    ]) == "true"
+    error_message = "StorageClass should be marked default."
+  }
+}
+
 run "validation_role" {
   command = plan
 

@@ -31,12 +31,55 @@ locals {
     var.addons.metrics_server.enabled ? {
       "metrics-server" = file("${path.module}/deps/vendor/addons/metrics-server/components.yaml")
     } : {},
+    var.addons.local_path_provisioner.enabled ? {
+      "local-path-provisioner" = local.local_path_provisioner_manifest
+    } : {},
   )
 
-  addon_patches_all = []
+  local_path_provisioner_path = "/var/mnt/local-path-provisioner"
+
+  local_path_provisioner_documents = [
+    for d in split("\n---\n", file("${path.module}/deps/vendor/addons/local-path-provisioner/deploy/local-path-storage.yaml")) :
+    yamldecode(d) if trimspace(d) != ""
+  ]
+
+  // Talos only allows writes below /var/mnt and enforces pod security.
+  local_path_provisioner_manifest = join("---\n", [
+    for doc in local.local_path_provisioner_documents : yamlencode(merge(doc, lookup({
+      ConfigMap = {
+        data = merge(try(doc.data, {}), {
+          "config.json" = jsonencode({
+            nodePathMap = [{
+              node  = "DEFAULT_PATH_FOR_NON_LISTED_NODES"
+              paths = [local.local_path_provisioner_path]
+            }]
+          })
+        })
+      }
+      Namespace = {
+        metadata = merge(doc.metadata, {
+          labels = merge(try(doc.metadata.labels, {}), { "pod-security.kubernetes.io/enforce" = "privileged" })
+        })
+      }
+      StorageClass = {
+        metadata = merge(doc.metadata, var.addons.local_path_provisioner.default_storage_class ? {
+          annotations = merge(try(doc.metadata.annotations, {}), { "storageclass.kubernetes.io/is-default-class" = "true" })
+        } : {})
+      }
+    }, doc.kind, {})))
+  ])
+
+  addon_patches_all = var.addons.local_path_provisioner.enabled ? [
+    yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "UserVolumeConfig"
+      name       = "local-path-provisioner"
+      volumeType = "directory"
+    })
+  ] : []
 
   addon_patches_controlplane = [
-    for name in ["kubelet-serving-cert-approver", "metrics-server"] : yamlencode({
+    for name in ["kubelet-serving-cert-approver", "metrics-server", "local-path-provisioner"] : yamlencode({
       apiVersion = "v1alpha1"
       kind       = "KubeInlineManifestConfig"
       name       = name
