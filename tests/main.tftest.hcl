@@ -643,11 +643,15 @@ run "disk_encryption" {
         image           = { version = "v1.14.5", secureboot = true }
         disk_encryption = { method = "tpm" }
         config_patches = [
+          yamlencode({ apiVersion = "v1alpha1", kind = "VolumeConfig", name = "STATE", "$patch" = "delete" }),
           yamlencode({
             apiVersion = "v1alpha1"
             kind       = "VolumeConfig"
             name       = "STATE"
-            encryption = { keys = [{ slot = 0, tpm = { options = { pcrs = [7, 11] } } }] }
+            encryption = {
+              provider = "luks2"
+              keys     = [{ slot = 0, tpm = { checkSecurebootStatusOnEnroll = true, options = { pcrs = [7, 11] } } }]
+            }
           })
         ]
         nodes = { cp1 = { ip_address = "10.0.0.1" } }
@@ -676,14 +680,14 @@ run "disk_encryption" {
     condition = [
       for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
       yamldecode(p).name if try(yamldecode(p).kind, "") == "VolumeConfig"
-    ] == ["STATE", "EPHEMERAL", "STATE"]
-    error_message = "Module STATE and EPHEMERAL documents must come before the group's STATE override."
+    ] == ["STATE", "EPHEMERAL", "STATE", "STATE"]
+    error_message = "Module STATE and EPHEMERAL documents must come before the group's STATE delete and replacement."
   }
 
   assert {
     condition = [
       for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
-      yamldecode(p).encryption if try(yamldecode(p).kind, "") == "VolumeConfig"
+      yamldecode(p).encryption if try(yamldecode(p).kind, "") == "VolumeConfig" && can(yamldecode(p).encryption)
       ][0] == {
       provider = "luks2"
       keys     = [{ slot = 0, tpm = { checkSecurebootStatusOnEnroll = true } }]
@@ -694,7 +698,7 @@ run "disk_encryption" {
   assert {
     condition = [
       for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
-      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig" && can(yamldecode(p).encryption)
     ][1] == [{ slot = 0, lockToState = true, tpm = { checkSecurebootStatusOnEnroll = true } }]
     error_message = "tpm EPHEMERAL key should lock to STATE."
   }
@@ -702,7 +706,7 @@ run "disk_encryption" {
   assert {
     condition = [
       for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
-      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig" && can(yamldecode(p).encryption)
     ] == [[{ slot = 0, nodeID = {} }], [{ slot = 0, lockToState = true, nodeID = {} }]]
     error_message = "nodeID group should get STATE and EPHEMERAL nodeID keys."
   }
@@ -710,7 +714,7 @@ run "disk_encryption" {
   assert {
     condition = [
       for p in talos_machine_configuration_apply.this["worker-k1"].config_patches :
-      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig" && can(yamldecode(p).encryption)
     ][0] == [{ slot = 0, kms = { endpoint = "https://kms.example:4443" } }]
     error_message = "kms group should get a kms key with the endpoint."
   }
