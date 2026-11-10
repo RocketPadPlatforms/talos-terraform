@@ -17,7 +17,8 @@ maintenance mode.
 - `main.tf` — Core module logic: Image Factory extensions, schematic and URL
   resolution, machine secrets, machine configuration data sources, per-node
   config application (certSANs, `UnattendedInstallConfig`, `KubeNodeConfig`,
-  `KubeletConfig` patches), bootstrap, and kubeconfig retrieval.
+  `KubeletConfig`, disk encryption `VolumeConfig` patches), bootstrap, and
+  kubeconfig retrieval.
 - `variables.tf` — Input variables: cluster metadata, version pins, `node_groups`
   (roles, image specs, shared and per-node settings), `config_patches`,
   `allow_scheduling_on_controlplanes`, `kubelet_server_tls_bootstrap`,
@@ -27,7 +28,8 @@ maintenance mode.
   `installer_images` per node group and `manifests_sync_command`.
 - `addons.tf` — `addons` input and the addon patches: inline manifests for
   kubelet-serving-cert-approver, metrics-server and local-path-provisioner
-  (adapted for Talos), plus the local-path `UserVolumeConfig`.
+  (adapted for Talos, helper image pinned by tag and digest and updated by a
+  Renovate regex manager), plus the local-path `UserVolumeConfig`.
 - `cilium.tf` — `cni` input; renders the vendored Cilium chart with
   `helm_template` and builds the control-plane CNI patches.
 - `deps/` — `vendir.yml` / `vendir.lock.yml` and the vendored upstream content
@@ -39,7 +41,7 @@ maintenance mode.
   overrides, addons and Cilium; plan runs for validation rules.
 - `docs/` — User documentation: `node-groups.md`, `images.md`,
   `disk-selection.md`, `config-patches.md`, `kubernetes-nodes.md`, `cilium.md`,
-  `addons.md`, `upgrading-to-v1.md`, `talosconfig-renewal.md`.
+  `addons.md`, `security.md`, `upgrading-to-v1.md`, `talosconfig-renewal.md`.
 - `.terraform-docs.yml` — terraform-docs settings; injects the generated inputs
   and outputs tables into the `BEGIN_TF_DOCS` block of `README.md`.
 - `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`,
@@ -121,8 +123,9 @@ opentofu destroy
 - Version constraints use `>=` in `version.tf`; downstream consumers pin.
 - `node_groups` keys are group names. Each group sets `role` (`controlplane` or
   `worker`), `image` (either `version` for Image Factory or `installer` as a raw
-  ref, never both), `nodes`, and optional `install_disk_match`, `labels`,
-  `annotations`, `taints`, `config_patches`.
+  ref, never both), `nodes`, and optional `install_disk_match`,
+  `disk_encryption` (group only), `labels`, `annotations`, `taints`,
+  `config_patches`.
 - `nodes` keys are node names, unique across all groups. Each node carries
   `ip_address` plus optional `install_disk_match`, `labels`, `annotations`,
   `taints`, `config_patches`.
@@ -131,11 +134,15 @@ opentofu destroy
   winning.
 - Patch order per node: generated patches (certSANs, `UnattendedInstallConfig`,
   control-plane taint removal, `KubeNodeConfig`, `KubeletConfig`, addon
-  `UserVolumeConfig`, then on control planes the Cilium and addon documents),
-  then `config_patches`, then group `config_patches`, then node
+  `UserVolumeConfig`, then on control planes the Cilium and addon documents,
+  then the `disk_encryption` `VolumeConfig` documents for `STATE` and
+  `EPHEMERAL`), then `config_patches`, then group `config_patches`, then node
   `config_patches`. New generated patches go after the existing ones so tests'
   patch indexes stay stable. All
   patches are YAML strings, typically built with `yamlencode`.
+- Talos appends list entries when merging patches: overriding a generated
+  document with lists (e.g. `VolumeConfig` keys) needs a `$patch: delete`
+  document followed by a full replacement.
 - Sensitive values are exposed only through `sensitive = true` outputs.
 - Commit messages follow Conventional Commits with scope of the affected area,
   e.g. `feat(talos): ...`, `chore(talos): bump talos provider`, `fix(*): ...`.
@@ -192,10 +199,11 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
   files are read for real):
   - `apply` runs check generated config for a basic controlplane and worker
     setup, per-node overrides, scheduling and TLS settings, each addon, Cilium,
-    and the `manifests_sync_command` output.
+    disk encryption per method, and the `manifests_sync_command` output.
   - `plan` runs check that invalid inputs are rejected (role, unique node
     names, image installer vs. version, talos_version floor, taint effect,
-    `cni` name/configuration, Cilium without `kubernetes_version`).
+    `cni` name/configuration, Cilium without `kubernetes_version`,
+    `disk_encryption` method, KMS endpoint and tpm without SecureBoot).
 - CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
   - `fmt` job runs `opentofu fmt -check -recursive`.
   - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
@@ -220,7 +228,7 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
 - Cluster data flows are intended to run over TLS: the endpoint defaults to
   `https://...:6443`.
 - Consumers should use an encrypted remote backend and restrict state access;
-  see the Secure your state section in [README.md](README.md). This module
+  see [docs/security.md](docs/security.md). This module
   itself does not configure a backend (state lives with the consumer).
 
 > TODO: no dependency scanning (e.g. trivy, osv-scanner) or provider
@@ -259,6 +267,9 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
   installer ref).
 - `node_groups.*.install_disk_match` / node-level override — CEL disk selector
   for the install disk.
+- `node_groups.*.disk_encryption` — `method` (`tpm`, `nodeID`, `kms`) and
+  `kms_endpoint`; LUKS2 for `STATE` and `EPHEMERAL`. Dedicated system volumes
+  carry their own encryption in user `VolumeConfig` patches.
 - `node_groups.*.labels`, `annotations`, `taints` (and per-node overrides) —
   Kubernetes node metadata applied via `KubeNodeConfig`.
 - `allow_scheduling_on_controlplanes` — removes the default control-plane
@@ -290,7 +301,7 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
 - [README.md](README.md) — module usage example, generated inputs and outputs,
   security guidance, and talosconfig renewal/recovery guidance.
 - [docs/](docs/) — node groups, images, disk selection, config patches,
-  Kubernetes nodes, upgrading to v1, and talosconfig renewal.
+  Kubernetes nodes, security, upgrading to v1, and talosconfig renewal.
 - [.github/workflows/ci.yml](.github/workflows/ci.yml) — CI pipeline
   definition (OpenTofu `fmt`/`validate`/`test` jobs).
 - [main.tf](main.tf), [variables.tf](variables.tf), [outputs.tf](outputs.tf),
