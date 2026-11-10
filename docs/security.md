@@ -53,8 +53,9 @@ any network it can reach, including:
 | `2379-2380/tcp` | etcd | control planes |
 | `10250/tcp` | kubelet | all |
 
-All of them require client certificates, but limiting who can reach them
-shrinks the attack surface. Talos has an ingress firewall configured through
+Outside maintenance mode all of them use TLS and require authentication (client
+certificates, or tokens on the Kubernetes API and `trustd`), but limiting who
+can reach them shrinks the attack surface. Talos has an ingress firewall configured through
 `NetworkDefaultActionConfig` and `NetworkRuleConfig` documents. A worker group
 that only accepts Talos API and kubelet traffic from the cluster network:
 
@@ -165,7 +166,7 @@ config_patches = [
 `ETCD`, `CRI`, `KUBELET` and `LOG` live in directories on `EPHEMERAL` by
 default and are encrypted with it. If you move one to its own partition (see
 [System Volumes](https://docs.siderolabs.com/talos/v1.14/configure-your-talos-cluster/storage-and-disk-management/disk-management/system#dedicated-system-volumes-etcd-cri-kubelet-log)),
-it is a separate LUKS volume and **is not encrypted unless its own
+it is a separate volume and **is not encrypted unless its own
 `VolumeConfig` has an `encryption` block**. The module does not add one; put it
 in the same document that creates the partition:
 
@@ -182,7 +183,7 @@ config_patches = [
     }
     encryption = {
       provider = "luks2"
-      keys     = [{ slot = 0, lockToState = true, tpm = {} }]
+      keys     = [{ slot = 0, lockToState = true, tpm = { checkSecurebootStatusOnEnroll = true } }]
     }
   }),
 ]
@@ -214,8 +215,9 @@ which is exactly the mismatch above):
 2. Remove the node from the old group and `tofu apply`. The module resets the
    node, which wipes `STATE` and `EPHEMERAL` (including local-path volumes)
    and returns it to maintenance mode. Removing the first control plane (by
-   name) also moves the bootstrap and kubeconfig target to another node;
-   review the plan before applying.
+   name) also moves the bootstrap and kubeconfig target to another node, and
+   the plan may show `talos_machine_bootstrap` being replaced; review the plan
+   before applying.
 3. The reset does not touch dedicated system volumes. If the node has any,
    wipe their partitions now, in maintenance mode:
    `talosctl -n <ip> wipe disk --insecure <partition>` (find them with
@@ -243,12 +245,16 @@ opt-in options:
   you use the ingress firewall.
 - **KubeSpan**: a Talos WireGuard mesh between nodes, enabled with a
   `KubeSpanConfig` document (`enabled = true`) in `config_patches`. It uses the
-  Sidero Labs discovery service by default. See
+  Sidero Labs discovery service by default. Allow UDP `51820` between nodes if
+  you use the ingress firewall. See
   [KubeSpan](https://docs.siderolabs.com/talos/v1.14/networking/kubespan),
   including its notes on Cilium.
 
-Control-plane traffic (Talos API, Kubernetes API, etcd, kubelet) always uses
-mutual TLS.
+The Talos API, Kubernetes API and etcd always use TLS with client
+authentication. Kubelet connections use TLS too, but the kubelet's serving
+certificate is self-signed unless `kubelet_server_tls_bootstrap` (or the
+`kubelet_cert_approver` or `metrics_server` addon) is enabled; only then is it
+signed by the cluster CA and verifiable by clients such as metrics-server.
 
 ## Kubernetes secrets and pod security
 
