@@ -1,0 +1,27 @@
+apiVersion: vendir.k14s.io/v1alpha1
+kind: Config
+directories:
+  - path: vendor
+    contents:
+      - path: cilium
+        helmChart:
+          name: cilium
+          version: "1.20.4"
+          repository:
+            url: https://helm.cilium.io
+      - path: addons/metrics-server
+        githubRelease:
+          slug: kubernetes-sigs/metrics-server
+          tag: v0.9.1
+          disableAutoChecksumValidation: true
+          assetNames: ["components.yaml"]
+      - path: addons/kubelet-serving-cert-approver
+        git:
+          url: https://github.com/alex1989hu/kubelet-serving-cert-approver
+          ref: v0.12.1
+        includePaths: ["deploy/standalone-install.yaml"]
+      - path: addons/local-path-provisioner
+        git:
+          url: https://github.com/rancher/local-path-provisioner
+          ref: v0.0.37
+        includePaths: ["deploy/local-path-storage.yaml"]

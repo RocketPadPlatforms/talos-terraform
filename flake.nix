@@ -14,8 +14,10 @@
       devShells.${system} = {
         default = pkgs.mkShell {
           packages = with pkgs; [
+            kubernetes-helm
             opentofu
             terraform-docs
+            vendir
           ];
         };
       };
