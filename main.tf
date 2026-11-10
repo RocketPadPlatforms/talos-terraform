@@ -31,6 +31,28 @@ locals {
 
   cluster_endpoint = var.cluster_endpoint != null ? var.cluster_endpoint : format("https://%s:6443", local.controlplane_address)
 
+  disk_encryption_patches = {
+    for name, g in var.node_groups : name => g.disk_encryption == null ? [] : [
+      for volume in ["STATE", "EPHEMERAL"] : yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "VolumeConfig"
+        name       = volume
+        encryption = {
+          provider = "luks2"
+          keys = [merge(
+            { slot = 0 },
+            volume == "EPHEMERAL" ? { lockToState = true } : {},
+            {
+              tpm    = { tpm = { checkSecurebootStatusOnEnroll = true } }
+              nodeID = { nodeID = {} }
+              kms    = { kms = { endpoint = g.disk_encryption.kms_endpoint } }
+            }[g.disk_encryption.method]
+          )]
+        }
+      })
+    ]
+  }
+
   factory_groups = {
     for name, g in var.node_groups : name => g.image if g.image.version != null
   }
@@ -192,6 +214,7 @@ resource "talos_machine_configuration_apply" "this" {
     ] : [],
     local.addon_patches_all,
     each.value.role == "controlplane" ? concat(local.cilium_patches_controlplane, local.addon_patches_controlplane) : [],
+    local.disk_encryption_patches[each.value.group_name],
     var.config_patches,
     each.value.group_patches,
     each.value.node_patches
