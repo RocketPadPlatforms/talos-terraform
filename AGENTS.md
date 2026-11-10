@@ -4,29 +4,44 @@
 
 This repository is a Terraform / OpenTofu module that provisions a Kubernetes
 cluster on bare-metal servers running [Talos Linux](https://www.talos.dev/).
-Given a map of control-plane and worker node data (IPs, install disks, per-node
-patches), it generates machine secrets, applies control-plane and worker machine
-configurations, bootstraps the cluster, and emits a `talosconfig` and `kubeconfig`.
-It is consumed as a Terraform module (see README's `module "talos"` block), not
-deployed in place. Node servers must already be booted into Talos maintenance mode.
+Given node groups (a role, an image spec, shared settings) with per-node IPs and
+overrides, it resolves Talos installer images (via Image Factory or a raw
+installer ref), generates machine secrets, applies controlplane and worker
+machine configurations, bootstraps the cluster, and emits a `talosconfig` and
+`kubeconfig`. It is consumed as a Terraform module (see README's `module "talos"`
+block), not deployed in place. Node servers must already be booted into Talos
+maintenance mode.
 
 # Repository Structure
 
-- `main.tf` — Core module logic: machine secrets, machine configuration data
-  sources, config application per node, bootstrap, and kubeconfig retrieval.
-- `variables.tf` — Input variables: cluster metadata, version pins, node_data
-  maps, and patch-list inputs.
+- `main.tf` — Core module logic: Image Factory extensions, schematic and URL
+  resolution, machine secrets, machine configuration data sources, per-node
+  config application (certSANs, `UnattendedInstallConfig`, `KubeNodeConfig`,
+  `KubeletConfig` patches), bootstrap, and kubeconfig retrieval.
+- `variables.tf` — Input variables: cluster metadata, version pins, `node_groups`
+  (roles, image specs, shared and per-node settings), `config_patches`,
+  `allow_scheduling_on_controlplanes`, `kubelet_server_tls_bootstrap`,
+  `apply_mode`, and input validations.
 - `outputs.tf` — Sensitive outputs: `talosconfig`, machine secrets, `kubeconfig`,
-  and the Kubernetes client configuration.
-- `version.tf` — Provider requirements (`siderolabs/talos >= 0.10.1`).
+  and the Kubernetes client configuration; plus the non-sensitive
+  `installer_images` per node group.
+- `version.tf` — Provider requirements (`siderolabs/talos >= 0.12.0`).
+- `tests/main.tftest.hcl` — `tofu test` suite using `mock_provider "talos"`
+  (runs offline): apply runs for config generation and overrides, plan runs for
+  validation rules.
+- `docs/` — User documentation: `node-groups.md`, `images.md`,
+  `disk-selection.md`, `config-patches.md`, `kubernetes-nodes.md`,
+  `upgrading-to-v1.md`, `talosconfig-renewal.md`.
+- `.terraform-docs.yml` — terraform-docs settings; injects the generated inputs
+  and outputs tables into the `BEGIN_TF_DOCS` block of `README.md`.
 - `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`.
 - `.envrc` — Registers the flake dev shell with direnv (`use flake`).
-- `.github/workflows/ci.yml` — GitHub Actions CI: OpenTofu `fmt`/`validate` jobs
-  via reusable actions from `RocketPadPlatforms/github-actions`.
+- `.github/workflows/ci.yml` — GitHub Actions CI: OpenTofu `fmt`, `validate`, and
+  `test` jobs via reusable actions from `RocketPadPlatforms/github-actions`.
 - `.github/workflows/release-please.yml` — Tagged releases via release-please,
   driven by Conventional Commits.
 - `renovate.json` — Mend-hosted Renovate config (dependency/version updates).
-- `README.md` — Module usage and requirements example.
+- `README.md` — Module usage, generated docs, security notes, and docs index.
 - `.gitignore` — Ignores local state, `.terraform/`, and all `*.tfvars`.
 - Local-only (ignored, not committed): `terraform.tfvars`, `terraform.tfstate`,
   `terraform.tfstate.backup`, `.terraform/`, `.direnv/`.
@@ -54,11 +69,18 @@ opentofu plan      # no -out needed for ad-hoc checks
 opentofu apply
 ```
 
-Format and validate (mirrors CI jobs):
+Format, validate, and test (mirrors CI jobs):
 
 ```bash
 opentofu fmt -check -recursive
 opentofu validate
+opentofu test
+```
+
+Regenerate the README docs block (after changing variables or outputs):
+
+```bash
+terraform-docs .
 ```
 
 Destroy nodes when decommissioning (also triggers cluster reset/reboot on
@@ -68,8 +90,8 @@ destroy by design):
 opentofu destroy
 ```
 
-> TODO: no explicit `lint`, `test`, or `debug` commands exist beyond `fmt` and
-> `validate`. No Terraform cloud backend is configured; state lives locally —
+> TODO: no explicit `lint` or `debug` commands exist beyond `fmt`, `validate`,
+> and `test`. No Terraform cloud backend is configured; state lives locally —
 > consumers should use an encrypted backend (see [README.md](README.md)).
 
 # Code Style & Conventions
@@ -78,10 +100,20 @@ opentofu destroy
 - Module inputs are typed and described; optional fields use `optional(...)`
   (see `variables.tf`).
 - Version constraints use `>=` in `version.tf`; downstream consumers pin.
-- Per-node overrides (install disk/image/selector, patches) are merged into
-  machine config as `yamlencode` patches composed with global patch lists.
-- Node data map keys are node names; nodes carry `ip_address` plus optional
-  `install_disk`, `install_disk_selector`, `install_image`, `talos_patches`.
+- `node_groups` keys are group names. Each group sets `role` (`controlplane` or
+  `worker`), `image` (either `version` for Image Factory or `installer` as a raw
+  ref, never both), `nodes`, and optional `install_disk_match`, `labels`,
+  `annotations`, `taints`, `config_patches`.
+- `nodes` keys are node names, unique across all groups. Each node carries
+  `ip_address` plus optional `install_disk_match`, `labels`, `annotations`,
+  `taints`, `config_patches`.
+- Node settings inherit from their group. `install_disk_match` is replaced by the
+  node value; `labels`, `annotations`, and `taints` are merged with node keys
+  winning.
+- Patch order per node: generated patches (certSANs, `UnattendedInstallConfig`,
+  control-plane taint removal, `KubeNodeConfig`, `KubeletConfig`), then
+  `config_patches`, then group `config_patches`, then node `config_patches`. All
+  patches are YAML strings, typically built with `yamlencode`.
 - Sensitive values are exposed only through `sensitive = true` outputs.
 - Commit messages follow Conventional Commits with scope of the affected area,
   e.g. `feat(talos): ...`, `chore(talos): bump talos provider`, `fix(*): ...`.
@@ -92,11 +124,15 @@ opentofu destroy
 ```mermaid
 graph TD
   A[You] -->|run module| B[secrets: talos_machine_secrets]
+  A -->|image.version set| F[data: image_factory_extensions_versions]
+  F --> S[resource: image_factory_schematic]
+  S --> U[data: image_factory_urls]
+  U -->|installer or installer_secureboot| IMG[local: group_images]
   B --> C[data: machine_configuration controlplane]
   B --> D[data: machine_configuration worker]
-  C --> E[apply: talos_machine_configuration_apply this]
-
+  C --> E[apply: talos_machine_configuration_apply all nodes]
   D --> E
+  IMG -->|UnattendedInstallConfig installer.image| E
   E --> G[bootstrap: talos_machine_bootstrap]
   E --> H[data: talos_cluster_health]
   G --> H
@@ -105,35 +141,43 @@ graph TD
   J --> O[outputs: talosconfig]
   B --> K[outputs: machine secrets]
   I --> L[outputs: kubeconfig / k8s client config]
+  IMG --> P[outputs: installer_images]
   E -->|config_patches flatten| M[per-node patches]
 ```
 
-Flow: `talos_machine_secrets` generates cluster-sensitive material once.
-Machine configuration for controlplane and worker types is templated from
-cluster/version inputs, then per node combined with cert SANs, install
-settings, and the `config_patches_*` lists (`yamlencode` merged via
-`concat`). A single `talos_machine_configuration_apply` resource keyed over
-both roles applies each node's config, selecting the role-specific config
-source and patch list per node. The first controlplane address (or a
-load-balanced VIP in `controlplane_address` / `cluster_endpoint`) becomes the
-cluster endpoint; after apply the cluster is bootstrapped (against the first
-controlplane node), then `talos_cluster_health` polls until the control plane
-and Kubernetes are healthy, and `talos_cluster_kubeconfig` captures cluster
-access. Destroy resets and reboots nodes (graceful off).
+Flow: for each group with `image.version`, the extensions are looked up, a
+schematic is created, and installer URLs are resolved (`installer_secureboot`
+when `secureboot` is set); groups with `image.installer` use that ref as-is.
+`talos_machine_secrets` generates cluster-sensitive material once. Machine
+configuration for controlplane and worker types is templated from cluster and
+version inputs. A single `talos_machine_configuration_apply` resource keyed over
+all nodes (`local.all_nodes`) applies each node's config, selecting the
+role-specific config source, the group's installer image, and the merged patch
+list. The first controlplane node (sorted by name) is the default cluster
+endpoint; bootstrap and kubeconfig always target it, never a VIP. After apply the
+cluster is bootstrapped, then `talos_cluster_health` polls until the control
+plane and Kubernetes are healthy (unless `enable_cluster_health_check` is false),
+and `talos_cluster_kubeconfig` captures cluster access. Destroy resets and
+reboots nodes (graceful off).
 
 Cluster endpoint derivation: `cluster_endpoint` var, else
 `https://<controlplane_address>:6443`, else IP of first controlplane node.
 
 # Testing Strategy
 
-- No unit/integration/e2e tests exist in the repo.
-- CI validates the module statically via GitHub Actions (`.github/workflows/ci.yml`):
+- `tests/main.tftest.hcl` covers the module offline with `mock_provider "talos"`:
+  - `apply` runs check generated config for a basic controlplane and worker
+    setup, per-node overrides, and scheduling and TLS settings.
+  - `plan` runs check that invalid inputs are rejected (role, unique node
+    names, image installer vs. version, talos_version floor, taint effect).
+- CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
   - `fmt` job runs `opentofu fmt -check -recursive`.
   - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
+  - `test` job runs `opentofu init -backend=false -input=false` + `opentofu test`.
 - Run the same checks locally:
 
 ```bash
-opentofu fmt -check -recursive && opentofu validate
+opentofu fmt -check -recursive && opentofu validate && opentofu test
 ```
 
 > TODO: no real-cluster smoke test is defined. To validate against live nodes,
@@ -144,7 +188,8 @@ opentofu fmt -check -recursive && opentofu validate
 - State files and all `.tfvars` are gitignored; treat them as confidential
   (`terraform.tfstate` holds machine secrets in plaintext).
 - Machine secrets, `talosconfig`, and `kubeconfig` are emitted only via
-  `sensitive` outputs to avoid plan/console exposure.
+  `sensitive` outputs to avoid plan/console exposure. `installer_images` is not
+  sensitive and contains only image references.
 - Cluster data flows are intended to run over TLS: the endpoint defaults to
   `https://...:6443`.
 - Consumers should use an encrypted remote backend and restrict state access;
@@ -168,28 +213,46 @@ opentofu fmt -check -recursive && opentofu validate
   bumps are conventionally separate `chore(talos): ...` commits.
 - Preserve the `--check`/`-check` flag on `fmt` in CI; do not auto-rewrite HCL
   formatting silently.
+- Keep the README `BEGIN_TF_DOCS` block generated with `terraform-docs .`; do not
+  hand-edit it.
 
 # Extensibility Hooks
 
-- `var.config_patches_all` — YAML patches applied to every node.
-- `var.config_patches_controlplane` / `var.config_patches_worker` — role-specific
-  YAML patches.
-- Per-node `talos_patches` in `var.node_data` — patches scoped to a single node.
-- `install_image` / `install_disk_selector` per node — override Talos install
-  artifact and disk selection.
+- `var.config_patches` — YAML patches applied to every node.
+- `node_groups.*.config_patches` — YAML patches applied to every node in a group.
+- `node_groups.*.nodes.*.config_patches` — YAML patches scoped to a single node.
+- `node_groups.*.image` — `version` with `extensions`, `extra_kernel_args`,
+  `architecture`, `platform`, `secureboot` (Image Factory), or `installer` (raw
+  installer ref).
+- `node_groups.*.install_disk_match` / node-level override — CEL disk selector
+  for the install disk.
+- `node_groups.*.labels`, `annotations`, `taints` (and per-node overrides) —
+  Kubernetes node metadata applied via `KubeNodeConfig`.
+- `allow_scheduling_on_controlplanes` — removes the default control-plane
+  NoSchedule taint.
+- `kubelet_server_tls_bootstrap` — enables kubelet serving certificate
+  bootstrapping on all nodes (requires a CSR approver).
+- `apply_mode` — `talos_machine_configuration_apply` mode (e.g.
+  `staged_if_needing_reboot` for safe migrations).
 - `kubernetes_version`, `talos_version` — version pins threaded into machine
-  configuration.
+  configuration. `talos_version` is the config contract (v1.14+), not the
+  installed version; set installed versions via `node_groups.*.image`.
 - `cluster_endpoint` / `controlplane_address` — decouple cluster endpoint from
   first node IP (e.g. for a load balancer/VIP).
+- `enable_cluster_health_check` — skip the cluster health wait when the node
+  address topology does not match `ip_address`.
 
 > TODO: no feature flags or environment-variable based configuration exist; all
 > knobs are Terraform variables above.
 
 # Further Reading
 
-- [README.md](README.md) — module usage example, requirements, and talosconfig
-  renewal/recovery guidance.
+- [README.md](README.md) — module usage example, generated inputs and outputs,
+  security guidance, and talosconfig renewal/recovery guidance.
+- [docs/](docs/) — node groups, images, disk selection, config patches,
+  Kubernetes nodes, upgrading to v1, and talosconfig renewal.
 - [.github/workflows/ci.yml](.github/workflows/ci.yml) — CI pipeline
-  definition (OpenTofu `fmt`/`validate` jobs).
-- [main.tf](main.tf), [variables.tf](variables.tf), [outputs.tf](outputs.tf) —
-  the complete module source.
+  definition (OpenTofu `fmt`/`validate`/`test` jobs).
+- [main.tf](main.tf), [variables.tf](variables.tf), [outputs.tf](outputs.tf),
+  [tests/main.tftest.hcl](tests/main.tftest.hcl) — the complete module source
+  and its tests.

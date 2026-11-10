@@ -17,3 +17,9 @@ output "kubernetes_client_configuration" {
   value     = resource.talos_cluster_kubeconfig.this.kubernetes_client_configuration
   sensitive = true
 }
+
+output "installer_images" {
+  description = "The resolved installer image reference for each node group."
+  value       = { for group, _ in var.node_groups : group => local.group_images[group] }
+  sensitive   = false
+}

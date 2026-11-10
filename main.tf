@@ -1,21 +1,100 @@
 locals {
-  // List of ip addresses of all control plane nodes
-  // `for_each` iterates maps in lexicographic-key order, so indexed access is
-  // deterministic. Non-empty is enforced by a validation on `var.node_data`.
-  controlplane_ip_addresses = [for each in var.node_data.controlplanes : each.ip_address]
+  all_nodes = merge([
+    for group_name, group in var.node_groups : {
+      for node_name, node in group.nodes : "${group.role}-${node_name}" => {
+        group_name = group_name
+        node_name  = node_name
+        role       = group.role
+        ip_address = node.ip_address
+        // coalesce() errors when both are null
+        install_disk_match = node.install_disk_match != null ? node.install_disk_match : group.install_disk_match
+        labels             = merge(group.labels, node.labels)
+        annotations        = merge(group.annotations, node.annotations)
+        taints             = merge(group.taints, node.taints)
+        group_patches      = group.config_patches
+        node_patches       = node.config_patches
+      }
+    }
+  ]...)
 
-  // Address of the controlplane
-  // Used as the cluster endpoint; first controlplane IP is the fallback
-  // when no load balancer address is set.
+  // sort() makes the first controlplane the lexicographically first node name
+  controlplane_ip_addresses = [
+    for key in sort([for key, n in local.all_nodes : key if n.role == "controlplane"]) :
+    local.all_nodes[key].ip_address
+  ]
+
   controlplane_address = var.controlplane_address != null ? var.controlplane_address : local.controlplane_ip_addresses[0]
 
   // Bootstrap and kubeconfig always target a real control plane node: a load
   // balancer/VIP has no healthy backends before the cluster is bootstrapped.
   bootstrap_node = local.controlplane_ip_addresses[0]
 
-  // Talos cluster endpoint
-  // If `var.cluster_endpoint` is not set it will build the endpoint based on the ip address of the first control plane node
   cluster_endpoint = var.cluster_endpoint != null ? var.cluster_endpoint : format("https://%s:6443", local.controlplane_address)
+
+  factory_groups = {
+    for name, g in var.node_groups : name => g.image if g.image.version != null
+  }
+
+  group_images = merge(
+    { for name, g in var.node_groups : name => g.image.installer if g.image.installer != null },
+    {
+      for name, image in local.factory_groups : name => (
+        image.secureboot
+        ? data.talos_image_factory_urls.this[name].urls.installer_secureboot
+        : data.talos_image_factory_urls.this[name].urls.installer
+      )
+    }
+  )
+}
+
+data "talos_image_factory_extensions_versions" "this" {
+  for_each = { for name, image in local.factory_groups : name => image if length(image.extensions) > 0 }
+
+  talos_version = each.value.version
+  exact_filters = {
+    names = each.value.extensions
+  }
+
+  lifecycle {
+    postcondition {
+      condition     = length(self.extensions_info) == length(distinct(each.value.extensions))
+      error_message = "Node group ${each.key}: not every extension in ${jsonencode(each.value.extensions)} exists for Talos ${each.value.version}."
+    }
+  }
+}
+
+resource "talos_image_factory_schematic" "this" {
+  for_each = local.factory_groups
+
+  schematic = yamlencode({
+    customization = merge(
+      length(each.value.extensions) > 0 ? {
+        systemExtensions = {
+          officialExtensions = data.talos_image_factory_extensions_versions.this[each.key].extensions_info[*].name
+        }
+      } : {},
+      length(each.value.extra_kernel_args) > 0 ? { extraKernelArgs = each.value.extra_kernel_args } : {}
+    )
+  })
+}
+
+data "talos_image_factory_urls" "this" {
+  for_each = local.factory_groups
+
+  talos_version = each.value.version
+  schematic_id  = talos_image_factory_schematic.this[each.key].id
+  platform      = each.value.platform
+  architecture  = each.value.architecture
+
+  lifecycle {
+    precondition {
+      condition = var.talos_version == null ? true : (
+        tonumber(regex("^v?(\\d+)\\.(\\d+)", each.value.version)[0]) * 1000 + tonumber(regex("^v?(\\d+)\\.(\\d+)", each.value.version)[1])
+        >= tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[0]) * 1000 + tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[1])
+      )
+      error_message = "Node group ${each.key}: image.version ${each.value.version} must be >= talos_version ${coalesce(var.talos_version, "-")}."
+    }
+  }
 }
 
 resource "talos_machine_secrets" "this" {
@@ -52,10 +131,7 @@ data "talos_client_configuration" "this" {
 }
 
 resource "talos_machine_configuration_apply" "this" {
-  for_each = merge(
-    { for name, node in var.node_data.controlplanes : "controlplane-${name}" => { role = "controlplane", node = node } },
-    { for name, node in var.node_data.workers : "worker-${name}" => { role = "worker", node = node } }
-  )
+  for_each = local.all_nodes
 
   client_configuration = talos_machine_secrets.this.client_configuration
   machine_configuration_input = (
@@ -63,7 +139,8 @@ resource "talos_machine_configuration_apply" "this" {
     ? data.talos_machine_configuration.controlplane.machine_configuration
     : data.talos_machine_configuration.worker.machine_configuration
   )
-  node = each.value.node.ip_address
+  node       = each.value.ip_address
+  apply_mode = var.apply_mode
   config_patches = concat(
     [
       yamlencode({
@@ -73,29 +150,49 @@ resource "talos_machine_configuration_apply" "this" {
           // trust it over TLS. distinct() de-duplicates the single-node case.
           certSANs = (
             each.value.role == "controlplane"
-            ? distinct([each.value.node.ip_address, local.controlplane_address])
-            : [each.value.node.ip_address]
+            ? distinct([each.value.ip_address, local.controlplane_address])
+            : [each.value.ip_address]
           )
-          install = {
-            disk         = each.value.node.install_disk
-            diskSelector = each.value.node.install_disk_selector
-          }
         }
-      })
+      }),
+      yamlencode(merge(
+        {
+          apiVersion = "v1alpha1"
+          kind       = "UnattendedInstallConfig"
+          installer  = { image = local.group_images[each.value.group_name] }
+        },
+        each.value.install_disk_match != null ? {
+          provisioning = { diskSelector = { match = each.value.install_disk_match } }
+        } : {}
+      )),
     ],
-    // Set install image only if its configured
-    each.value.node.install_image != null ? [
+    // Runs before the taints patch below so it only drops the generated
+    // control-plane taint, not the group/node taints.
+    var.allow_scheduling_on_controlplanes && each.value.role == "controlplane" ? [
       yamlencode({
-        machine = {
-          install = {
-            image = each.value.node.install_image
-          }
-        }
+        apiVersion = "v1alpha1"
+        kind       = "KubeNodeConfig"
+        taints     = { "$patch" = "delete" }
       })
     ] : [],
-    each.value.role == "controlplane" ? var.config_patches_controlplane : var.config_patches_worker,
-    var.config_patches_all,
-    each.value.node.talos_patches != null ? each.value.node.talos_patches : []
+    length(merge(each.value.labels, each.value.annotations, each.value.taints)) > 0 ? [
+      yamlencode(merge(
+        { apiVersion = "v1alpha1", kind = "KubeNodeConfig" },
+        length(each.value.labels) > 0 ? { labels = each.value.labels } : {},
+        length(each.value.annotations) > 0 ? { annotations = each.value.annotations } : {},
+        length(each.value.taints) > 0 ? { taints = each.value.taints } : {}
+      ))
+    ] : [],
+    var.kubelet_server_tls_bootstrap ? [
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "KubeletConfig"
+        config     = { serverTLSBootstrap = true }
+      })
+    ] : [],
+    var.config_patches,
+    each.value.group_patches,
+    each.value.node_patches
   )
   on_destroy = {
     reset    = true
@@ -119,7 +216,7 @@ data "talos_cluster_health" "this" {
   client_configuration = talos_machine_secrets.this.client_configuration
   endpoints            = local.controlplane_ip_addresses
   control_plane_nodes  = local.controlplane_ip_addresses
-  worker_nodes         = [for each in var.node_data.workers : each.ip_address]
+  worker_nodes         = [for key, n in local.all_nodes : n.ip_address if n.role == "worker"]
 
   timeouts = {
     read = "15m"
