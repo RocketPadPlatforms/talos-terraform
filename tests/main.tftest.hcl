@@ -93,6 +93,31 @@ run "basic_controlplane_and_worker" {
     )
     error_message = "Group labels should be rendered into a KubeNodeConfig patch."
   }
+
+  assert {
+    condition     = output.manifests_sync_command == "talosctl -n 10.0.0.1 upgrade-k8s --to 1.36.6"
+    error_message = "Sync command should target the bootstrap node and the configured Kubernetes version."
+  }
+}
+
+run "manifests_sync_command_without_version" {
+  command = apply
+
+  variables {
+    kubernetes_version = null
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  assert {
+    condition     = output.manifests_sync_command == null
+    error_message = "Without kubernetes_version there is no version to sync to."
+  }
 }
 
 run "node_overrides" {
