@@ -286,6 +286,30 @@ run "defaults_add_no_addon_patches" {
   }
 }
 
+run "null_cni_and_addons_use_defaults" {
+  command = apply
+
+  variables {
+    cni    = null
+    addons = null
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  assert {
+    condition = !anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig"], try(yamldecode(p).kind, ""))
+    ])
+    error_message = "Null cni and addons must behave like the defaults."
+  }
+}
+
 run "addons_metrics_server" {
   command = apply
 
