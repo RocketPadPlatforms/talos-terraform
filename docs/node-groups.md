@@ -98,3 +98,7 @@ node_groups = {
   lexicographically. It is used for the endpoint fallback, bootstrap and
   kubeconfig.
 - At least one controlplane node is required.
+- **`disk_encryption` is fixed once nodes are provisioned.** Adding, removing
+  or changing it on a group with running nodes makes them fail on their next
+  reboot. Move nodes to a new group instead; see
+  [Existing nodes](security.md#existing-nodes).

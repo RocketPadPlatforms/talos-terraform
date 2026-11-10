@@ -115,6 +115,8 @@ variable "node_groups" {
   description = <<-EOT
     Node groups by hardware or purpose class. Each group carries a role,
     an image spec, and shared settings. Nodes inherit and can override.
+    Never add, remove or change disk_encryption on a group with provisioned
+    nodes: they fail to boot on the next reboot (see docs/security.md).
   EOT
   type = map(object({
     role = string
