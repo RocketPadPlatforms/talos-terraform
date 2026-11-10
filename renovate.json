@@ -7,6 +7,17 @@
   "nix": {
     "enabled": true
   },
+  "customManagers": [
+    {
+      "description": "The pinned local-path-provisioner helper image in addons.tf.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^addons\\.tf$/"],
+      "matchStrings": [
+        "\"(?<depName>docker\\.io/library/busybox):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]+)\""
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
       "description": "Updates that only touch CI files must not trigger a release.",

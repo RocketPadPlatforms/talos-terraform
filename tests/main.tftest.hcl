@@ -501,6 +501,22 @@ run "addons_local_path_provisioner" {
   }
 
   assert {
+    condition = strcontains(one([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      yamldecode(d).data["helperPod.yaml"] if try(yamldecode(d).kind, "") == "ConfigMap"
+    ]), "image: ${local.local_path_helper_image}\n")
+    error_message = "Helper pod should use the pinned busybox image."
+  }
+
+  assert {
+    condition = length(regexall("busybox\\s*\\n", one([
+      for d in split("\n---\n", local.local_path_provisioner_manifest) :
+      yamldecode(d).data["helperPod.yaml"] if try(yamldecode(d).kind, "") == "ConfigMap"
+    ]))) == 0
+    error_message = "No unpinned busybox image may remain."
+  }
+
+  assert {
     condition = one([
       for d in split("\n---\n", local.local_path_provisioner_manifest) :
       yamldecode(d).metadata.labels["pod-security.kubernetes.io/enforce"] if try(yamldecode(d).kind, "") == "Namespace"
