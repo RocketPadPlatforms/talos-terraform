@@ -57,4 +57,5 @@ controlplane group or node are kept.
 certificate through a CSR, and nothing approves those automatically. Install a
 CSR approver such as
 [kubelet-serving-cert-approver](https://github.com/alex1989hu/kubelet-serving-cert-approver)
-or the cluster will have pending CSRs and broken `kubectl logs`/`exec`.
+or the cluster will have pending CSRs and broken `kubectl logs`/`exec`. The
+`kubelet_cert_approver` [addon](addons.md) installs it and enables this setting.

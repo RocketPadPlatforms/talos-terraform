@@ -12,7 +12,9 @@ For each node, patches apply from general to specific. Later patches win.
    2. `UnattendedInstallConfig`: the group's installer image, plus the disk match if set
    3. `KubeNodeConfig` taint delete (controlplanes, when `allow_scheduling_on_controlplanes` is true)
    4. `KubeNodeConfig` with the merged labels, annotations and taints (only if any are set)
-   5. `KubeletConfig` with `serverTLSBootstrap` (when `kubelet_server_tls_bootstrap` is true)
+   5. `KubeletConfig` with `serverTLSBootstrap` (when `kubelet_server_tls_bootstrap` is true, or the `kubelet_cert_approver` or `metrics_server` addon is enabled)
+   6. `UserVolumeConfig` `local-path-provisioner` (when the `local_path_provisioner` addon is enabled)
+   7. Controlplanes only: the [Cilium](cilium.md) documents (`KubeFlannelCNIConfig` delete, `KubeProxyConfig` disabled, `KubeInlineManifestConfig` `cilium`), then one `KubeInlineManifestConfig` per enabled [addon](addons.md)
 2. `config_patches` (cluster-wide)
 3. the group's `config_patches`
 4. the node's `config_patches`

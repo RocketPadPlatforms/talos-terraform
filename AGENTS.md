@@ -24,20 +24,30 @@ maintenance mode.
   `apply_mode`, and input validations.
 - `outputs.tf` — Sensitive outputs: `talosconfig`, machine secrets, `kubeconfig`,
   and the Kubernetes client configuration; plus the non-sensitive
-  `installer_images` per node group.
-- `version.tf` — Provider requirements (`siderolabs/talos >= 0.12.0`).
-- `tests/main.tftest.hcl` — `tofu test` suite using `mock_provider "talos"`
-  (runs offline): apply runs for config generation and overrides, plan runs for
-  validation rules.
+  `installer_images` per node group and `manifests_sync_command`.
+- `addons.tf` — `addons` input and the addon patches: inline manifests for
+  kubelet-serving-cert-approver, metrics-server and local-path-provisioner
+  (adapted for Talos), plus the local-path `UserVolumeConfig`.
+- `cilium.tf` — `cni` input; renders the vendored Cilium chart with
+  `helm_template` and builds the control-plane CNI patches.
+- `deps/` — `vendir.yml` / `vendir.lock.yml` and the vendored upstream content
+  in `deps/vendor/` (Cilium chart, addon manifests), committed.
+- `version.tf` — Provider requirements (`siderolabs/talos >= 0.12.0`,
+  `hashicorp/helm >= 3.0`).
+- `tests/main.tftest.hcl` — `tofu test` suite using `mock_provider "talos"` and
+  `mock_provider "helm"` (runs offline): apply runs for config generation,
+  overrides, addons and Cilium; plan runs for validation rules.
 - `docs/` — User documentation: `node-groups.md`, `images.md`,
-  `disk-selection.md`, `config-patches.md`, `kubernetes-nodes.md`,
-  `upgrading-to-v1.md`, `talosconfig-renewal.md`.
+  `disk-selection.md`, `config-patches.md`, `kubernetes-nodes.md`, `cilium.md`,
+  `addons.md`, `upgrading-to-v1.md`, `talosconfig-renewal.md`.
 - `.terraform-docs.yml` — terraform-docs settings; injects the generated inputs
   and outputs tables into the `BEGIN_TF_DOCS` block of `README.md`.
-- `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`.
+- `flake.nix` / `flake.lock` — Nix flake providing a dev shell with `opentofu`,
+  `terraform-docs`, `vendir` and `helm`.
 - `.envrc` — Registers the flake dev shell with direnv (`use flake`).
-- `.github/workflows/ci.yml` — GitHub Actions CI: OpenTofu `fmt`, `validate`, and
-  `test` jobs via reusable actions from `RocketPadPlatforms/github-actions`.
+- `.github/workflows/ci.yml` — GitHub Actions CI: OpenTofu `fmt`, `validate`,
+  `test`, and `vendir` (vendored deps match the lock file) jobs via reusable
+  actions from `RocketPadPlatforms/github-actions`.
 - `.github/workflows/release-please.yml` — Tagged releases via release-please,
   driven by Conventional Commits.
 - `renovate.json` — Mend-hosted Renovate config (dependency/version updates).
@@ -83,6 +93,15 @@ Regenerate the README docs block (after changing variables or outputs):
 terraform-docs .
 ```
 
+Update vendored upstream content (after changing a version in `deps/vendir.yml`)
+and check it matches the lock file (as CI does):
+
+```bash
+cd deps
+vendir sync
+vendir sync -l && git diff --exit-code -- vendor vendir.lock.yml
+```
+
 Destroy nodes when decommissioning (also triggers cluster reset/reboot on
 destroy by design):
 
@@ -111,8 +130,11 @@ opentofu destroy
   node value; `labels`, `annotations`, and `taints` are merged with node keys
   winning.
 - Patch order per node: generated patches (certSANs, `UnattendedInstallConfig`,
-  control-plane taint removal, `KubeNodeConfig`, `KubeletConfig`), then
-  `config_patches`, then group `config_patches`, then node `config_patches`. All
+  control-plane taint removal, `KubeNodeConfig`, `KubeletConfig`, addon
+  `UserVolumeConfig`, then on control planes the Cilium and addon documents),
+  then `config_patches`, then group `config_patches`, then node
+  `config_patches`. New generated patches go after the existing ones so tests'
+  patch indexes stay stable. All
   patches are YAML strings, typically built with `yamlencode`.
 - Sensitive values are exposed only through `sensitive = true` outputs.
 - Commit messages follow Conventional Commits with scope of the affected area,
@@ -165,15 +187,20 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
 
 # Testing Strategy
 
-- `tests/main.tftest.hcl` covers the module offline with `mock_provider "talos"`:
+- `tests/main.tftest.hcl` covers the module offline with `mock_provider "talos"`
+  and `mock_provider "helm"` (the Cilium manifest is mocked; vendored addon
+  files are read for real):
   - `apply` runs check generated config for a basic controlplane and worker
-    setup, per-node overrides, and scheduling and TLS settings.
+    setup, per-node overrides, scheduling and TLS settings, each addon, Cilium,
+    and the `manifests_sync_command` output.
   - `plan` runs check that invalid inputs are rejected (role, unique node
-    names, image installer vs. version, talos_version floor, taint effect).
+    names, image installer vs. version, talos_version floor, taint effect,
+    `cni` name/configuration, Cilium without `kubernetes_version`).
 - CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
   - `fmt` job runs `opentofu fmt -check -recursive`.
   - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
   - `test` job runs `opentofu init -backend=false -input=false` + `opentofu test`.
+  - `vendir` job runs `vendir sync -l` in `deps/` and fails on any diff.
 - Run the same checks locally:
 
 ```bash
@@ -215,6 +242,12 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
   formatting silently.
 - Keep the README `BEGIN_TF_DOCS` block generated with `terraform-docs .`; do not
   hand-edit it.
+- Never hand-edit `deps/vendor/`; change `deps/vendir.yml` and run `vendir sync`.
+- Cilium and the addons are owned by Talos (`talosctl upgrade-k8s`) after
+  bootstrap; GitOps must not manage them.
+- Rendered manifests must be reproducible: never enable chart options that
+  generate random content at render time (e.g. Cilium `tls.auto.method: helm`),
+  or every plan re-applies node configuration.
 
 # Extensibility Hooks
 
@@ -232,6 +265,13 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
   NoSchedule taint.
 - `kubelet_server_tls_bootstrap` — enables kubelet serving certificate
   bootstrapping on all nodes (requires a CSR approver).
+- `addons` — `kubelet_cert_approver`, `metrics_server`,
+  `local_path_provisioner` (`enabled` plus per-addon settings). New addons add
+  a field, a `deps/vendir.yml` entry, and an inline manifest entry.
+- `cni` — `name` (`flannel` or `cilium`) and `configuration` (Cilium Helm
+  values over the module's base values).
+- `manifests_sync_command` output — `talosctl upgrade-k8s` at the current
+  Kubernetes version to upgrade, remove, or re-sync Cilium and addons.
 - `apply_mode` — `talos_machine_configuration_apply` mode (e.g.
   `staged_if_needing_reboot` for safe migrations).
 - `kubernetes_version`, `talos_version` — version pins threaded into machine
