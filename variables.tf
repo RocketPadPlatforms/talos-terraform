@@ -45,71 +45,178 @@ variable "kubernetes_version" {
 variable "talos_version" {
   description = <<-EOT
     The Talos version contract used to generate secrets and machine configuration,
-    e.g. `v1.12` or `1.12.1`. Optional: the provider computes a default when unset.
-    This does not control the installed Talos version - set machine.install.image
-    via per-node install_image or config_patches for that.
+    e.g. `v1.14` or `1.14.5`. Must be v1.14 or newer. Optional: the provider
+    computes a default when unset.
+    This does not control the installed Talos version - set it via
+    node_groups.*.image.
   EOT
   type        = string
   default     = null
 
   validation {
     condition     = var.talos_version == null || can(regex("^v?\\d+\\.\\d+", var.talos_version))
-    error_message = "talos_version must look like a version, e.g. v1.7.6."
+    error_message = "talos_version must look like a version, e.g. v1.14 or 1.14.5."
+  }
+
+  validation {
+    condition = var.talos_version == null || try(
+      tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[0]) > 1 ||
+      (
+        tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[0]) == 1 &&
+        tonumber(regex("^v?(\\d+)\\.(\\d+)", var.talos_version)[1]) >= 14
+      ),
+      true
+    )
+    error_message = "talos_version must be v1.14 or newer."
   }
 }
 
-variable "node_data" {
+variable "config_patches" {
+  description = "YAML config patches applied to all nodes."
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_scheduling_on_controlplanes" {
   description = <<-EOT
-    A map of nodes by role and name; each node has an ip_address plus optional install
-    disk/image/selector and per-node talos_patches.
+    Remove the default NoSchedule taint from control plane nodes,
+    allowing regular workloads to be scheduled on them.
   EOT
-  type = object({
-    controlplanes = map(object({
-      ip_address            = string
-      install_disk          = optional(string)
-      install_disk_selector = optional(map(string))
-      install_image         = optional(string)
-      talos_patches         = optional(list(string))
-    }))
-    workers = map(object({
-      ip_address            = string
-      install_disk          = optional(string)
-      install_disk_selector = optional(map(string))
-      install_image         = optional(string)
-      talos_patches         = optional(list(string))
-    }))
-  })
+  type        = bool
+  default     = false
+}
+
+variable "kubelet_server_tls_bootstrap" {
+  description = <<-EOT
+    Enable kubelet server TLS bootstrapping on all nodes.
+    Requires a CSR approver (e.g. kubelet-serving-cert-approver).
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "apply_mode" {
+  description = <<-EOT
+    The apply mode for talos_machine_configuration_apply.
+    Use "staged_if_needing_reboot" for safe migrations.
+  EOT
+  type        = string
+  default     = "auto"
 
   validation {
-    condition     = length(var.node_data.controlplanes) > 0
-    error_message = "At least one controlplane node must be provided in node_data.controlplanes."
+    condition     = contains(["auto", "staged", "staged_if_needing_reboot", "no_reboot", "reboot"], var.apply_mode)
+    error_message = "apply_mode must be one of: auto, staged, staged_if_needing_reboot, no_reboot, reboot."
+  }
+}
+
+variable "node_groups" {
+  description = <<-EOT
+    Node groups by hardware or purpose class. Each group carries a role,
+    an image spec, and shared settings. Nodes inherit and can override.
+  EOT
+  type = map(object({
+    role = string
+    image = object({
+      version           = optional(string)
+      extensions        = optional(list(string), [])
+      extra_kernel_args = optional(list(string), [])
+      architecture      = optional(string, "amd64")
+      platform          = optional(string, "metal")
+      secureboot        = optional(bool, false)
+      installer         = optional(string)
+    })
+    install_disk_match = optional(string)
+    labels             = optional(map(string), {})
+    annotations        = optional(map(string), {})
+    taints             = optional(map(string), {})
+    config_patches     = optional(list(string), [])
+    nodes = map(object({
+      ip_address         = string
+      install_disk_match = optional(string)
+      labels             = optional(map(string), {})
+      annotations        = optional(map(string), {})
+      taints             = optional(map(string), {})
+      config_patches     = optional(list(string), [])
+    }))
+  }))
+
+  validation {
+    condition = length(flatten([
+      for g in values(var.node_groups) : [
+        for n in keys(g.nodes) : n if g.role == "controlplane"
+      ]
+    ])) > 0
+    error_message = "At least one controlplane node must be provided."
   }
 
   validation {
     condition = alltrue([
-      for node in concat(values(var.node_data.controlplanes), values(var.node_data.workers)) :
-      length(node.ip_address) > 0 && !can(regex("\\s", node.ip_address))
+      for g in values(var.node_groups) : contains(["controlplane", "worker"], g.role)
     ])
-    error_message = "Every node ip_address must be a non-empty address without whitespace."
+    error_message = "Each node group role must be 'controlplane' or 'worker'."
   }
-}
 
-variable "config_patches_controlplane" {
-  description = "A list of Talos config patches files for controlplane nodes"
-  type        = list(string)
-  default     = []
-}
+  validation {
+    condition = alltrue(flatten([
+      for g in values(var.node_groups) : [
+        for n in values(g.nodes) :
+        length(n.ip_address) > 0 && !can(regex("\\s", n.ip_address))
+      ]
+    ]))
+    error_message = "Every node ip_address must be non-empty without whitespace."
+  }
 
-variable "config_patches_worker" {
-  description = "A list of Talos config patches files for worker nodes"
-  type        = list(string)
-  default     = []
-}
+  validation {
+    condition = length(flatten([
+      for g in values(var.node_groups) : keys(g.nodes)
+      ])) == length(distinct(flatten([
+        for g in values(var.node_groups) : keys(g.nodes)
+    ])))
+    error_message = "Node names must be unique across all groups."
+  }
 
-variable "config_patches_all" {
-  description = "A list of Talos config patches files for all nodes"
-  type        = list(string)
-  default     = []
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) :
+      (g.image.installer != null) != (g.image.version != null)
+    ])
+    error_message = "Each image must set either 'installer' (raw ref) or 'version' (Factory spec), not both."
+  }
+
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) :
+      g.image.version == null || can(regex("^v?\\d+\\.\\d+", g.image.version))
+    ])
+    error_message = "image.version must look like a version, e.g. v1.14.5."
+  }
+
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) :
+      g.image.version == null || try(
+        tonumber(regex("^v?(\\d+)\\.(\\d+)", g.image.version)[0]) > 1 ||
+        (
+          tonumber(regex("^v?(\\d+)\\.(\\d+)", g.image.version)[0]) == 1 &&
+          tonumber(regex("^v?(\\d+)\\.(\\d+)", g.image.version)[1]) >= 14
+        ),
+        true
+      )
+    ])
+    error_message = "image.version must be v1.14 or newer."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for g in values(var.node_groups) : concat(
+        [for v in values(g.taints) : can(regex("^([^:]*:)?(NoSchedule|PreferNoSchedule|NoExecute)$", v))],
+        flatten([for n in values(g.nodes) : [
+          for v in values(n.taints) : can(regex("^([^:]*:)?(NoSchedule|PreferNoSchedule|NoExecute)$", v))
+        ]])
+      )
+    ]))
+    error_message = "Taint values must match '[<value>:]NoSchedule|PreferNoSchedule|NoExecute'."
+  }
 }
 
 variable "enable_cluster_health_check" {
@@ -121,12 +228,12 @@ variable "enable_cluster_health_check" {
     Disabling this is occasionally necessary when the health check's
     assumptions don't hold for a given network topology: it requires the
     Kubernetes Node object to report an address matching the corresponding
-    node_data.*.ip_address, which fails if machine.kubelet.nodeIP is
-    patched (via config_patches_all/_controlplane/_worker) to prefer a
-    different subnet than the one node_data.*.ip_address uses - e.g. when
-    node_data uses each node's public IP (so Terraform/talosctl stay
-    reachable from outside the cluster) but kubelet.nodeIP is pinned to a
-    private network for internal traffic.
+    `node_groups.*.nodes.*.ip_address`, which fails if the KubeNodeConfig
+    nodeIP is patched (via config_patches) to prefer a different subnet than
+    the one `node_groups.*.nodes.*.ip_address` uses - e.g. when node_groups
+    uses each node's public IP (so Terraform/talosctl stay reachable from
+    outside the cluster) but the KubeNodeConfig nodeIP is pinned to a private
+    network for internal traffic.
   EOT
   type        = bool
   default     = true
