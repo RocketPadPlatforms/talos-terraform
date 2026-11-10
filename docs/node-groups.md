@@ -19,10 +19,14 @@ node_groups = map(object({
     installer         = optional(string)
   })
   install_disk_match = optional(string)
-  labels             = optional(map(string), {})
-  annotations        = optional(map(string), {})
-  taints             = optional(map(string), {})
-  config_patches     = optional(list(string), [])
+  disk_encryption = optional(object({
+    method       = string           # "tpm", "nodeID" or "kms"
+    kms_endpoint = optional(string) # required for "kms"
+  }))
+  labels         = optional(map(string), {})
+  annotations    = optional(map(string), {})
+  taints         = optional(map(string), {})
+  config_patches = optional(list(string), [])
   nodes = map(object({
     ip_address         = string
     install_disk_match = optional(string)
@@ -35,7 +39,8 @@ node_groups = map(object({
 ```
 
 See [Images](images.md) for `image`, [Disk selection](disk-selection.md) for
-`install_disk_match`, [Config patches](config-patches.md) for `config_patches`
+`install_disk_match`, [Security](security.md#disk-encryption) for
+`disk_encryption`, [Config patches](config-patches.md) for `config_patches`
 and [Kubernetes nodes](kubernetes-nodes.md) for labels, annotations and taints.
 
 ## Merge rules
@@ -45,7 +50,7 @@ and [Kubernetes nodes](kubernetes-nodes.md) for labels, annotations and taints.
 | `labels`, `annotations`, `taints` | Merged by key; the node wins on conflict |
 | `config_patches` | Appended: cluster, then group, then node |
 | `install_disk_match` | The node's value replaces the group's |
-| `image` | Group only |
+| `image`, `disk_encryption` | Group only |
 
 ## Example
 

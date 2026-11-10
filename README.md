@@ -104,7 +104,7 @@ No modules.
 | Name | Description | Type | Default | Required |
 | ---- | ----------- | ---- | ------- | :------: |
 | <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | A name to provide for the Talos cluster | `string` | n/a | yes |
-| <a name="input_node_groups"></a> [node\_groups](#input\_node\_groups) | Node groups by hardware or purpose class. Each group carries a role,<br/>an image spec, and shared settings. Nodes inherit and can override. | <pre>map(object({<br/>    role = string<br/>    image = object({<br/>      version           = optional(string)<br/>      extensions        = optional(list(string), [])<br/>      extra_kernel_args = optional(list(string), [])<br/>      architecture      = optional(string, "amd64")<br/>      platform          = optional(string, "metal")<br/>      secureboot        = optional(bool, false)<br/>      installer         = optional(string)<br/>    })<br/>    install_disk_match = optional(string)<br/>    labels             = optional(map(string), {})<br/>    annotations        = optional(map(string), {})<br/>    taints             = optional(map(string), {})<br/>    config_patches     = optional(list(string), [])<br/>    nodes = map(object({<br/>      ip_address         = string<br/>      install_disk_match = optional(string)<br/>      labels             = optional(map(string), {})<br/>      annotations        = optional(map(string), {})<br/>      taints             = optional(map(string), {})<br/>      config_patches     = optional(list(string), [])<br/>    }))<br/>  }))</pre> | n/a | yes |
+| <a name="input_node_groups"></a> [node\_groups](#input\_node\_groups) | Node groups by hardware or purpose class. Each group carries a role,<br/>an image spec, and shared settings. Nodes inherit and can override. | <pre>map(object({<br/>    role = string<br/>    image = object({<br/>      version           = optional(string)<br/>      extensions        = optional(list(string), [])<br/>      extra_kernel_args = optional(list(string), [])<br/>      architecture      = optional(string, "amd64")<br/>      platform          = optional(string, "metal")<br/>      secureboot        = optional(bool, false)<br/>      installer         = optional(string)<br/>    })<br/>    install_disk_match = optional(string)<br/>    disk_encryption = optional(object({<br/>      method       = string<br/>      kms_endpoint = optional(string)<br/>    }))<br/>    labels         = optional(map(string), {})<br/>    annotations    = optional(map(string), {})<br/>    taints         = optional(map(string), {})<br/>    config_patches = optional(list(string), [])<br/>    nodes = map(object({<br/>      ip_address         = string<br/>      install_disk_match = optional(string)<br/>      labels             = optional(map(string), {})<br/>      annotations        = optional(map(string), {})<br/>      taints             = optional(map(string), {})<br/>      config_patches     = optional(list(string), [])<br/>    }))<br/>  }))</pre> | n/a | yes |
 | <a name="input_addons"></a> [addons](#input\_addons) | Optional cluster addons, installed as Talos inline manifests on the<br/>control planes and kept in sync with `talosctl upgrade-k8s` (see the<br/>manifests\_sync\_command output). Each addon is an object with `enabled`<br/>plus its own settings. metrics\_server also enables kubelet\_cert\_approver. | <pre>object({<br/>    kubelet_cert_approver = optional(object({<br/>      enabled = optional(bool, false)<br/>    }), {})<br/>    metrics_server = optional(object({<br/>      enabled = optional(bool, false)<br/>    }), {})<br/>    local_path_provisioner = optional(object({<br/>      enabled               = optional(bool, false)<br/>      default_storage_class = optional(bool, false)<br/>    }), {})<br/>  })</pre> | `{}` | no |
 | <a name="input_allow_scheduling_on_controlplanes"></a> [allow\_scheduling\_on\_controlplanes](#input\_allow\_scheduling\_on\_controlplanes) | Remove the default NoSchedule taint from control plane nodes,<br/>allowing regular workloads to be scheduled on them. | `bool` | `false` | no |
 | <a name="input_apply_mode"></a> [apply\_mode](#input\_apply\_mode) | The apply mode for talos\_machine\_configuration\_apply.<br/>Use "staged\_if\_needing\_reboot" for safe migrations. | `string` | `"auto"` | no |
@@ -131,21 +131,10 @@ No modules.
 
 ## Security
 
-The module's state is highly sensitive: it stores the generated Talos machine
-secrets and the cluster `kubeconfig` in plaintext. Treat state like a credential:
-
-- **Use an encrypted remote backend for production.** Prefer Terraform/OpenTofu
-  cloud backends or an S3/GCS/Azure backend with server-side encryption (KMS)
-  enabled, and enable state locking. Avoid the default local backend with state
-  on shared or untracked disk.
-- **Restrict state access.** Only operators who need cluster administration
-  rights should be able to read state, backups, or the outputs.
-- **Protect operator credentials.** Lock down the OpenTofu CLI configuration
-  and any cloud/provider credentials on machines running `tofu apply`. Never
-  commit `*.tfvars` (local overrides are already gitignored).
-- **Sensitive outputs.** The `talosconfig`, machine secrets and `kubeconfig`
-  outputs are `sensitive = true` and are not printed in plans or console
-  output; avoid piping them into logs or files outside the state/backend.
+The module's state stores the Talos machine secrets and the cluster
+`kubeconfig` in plaintext: use an encrypted remote backend and restrict who can
+read it. See [Security](docs/security.md) for state handling, network exposure,
+disk encryption (`node_groups.*.disk_encryption`), SecureBoot and more.
 
 ## Documentation
 
@@ -157,4 +146,5 @@ secrets and the cluster `kubeconfig` in plaintext. Treat state like a credential
 - [Cilium](docs/cilium.md): replacing Flannel and kube-proxy with Cilium
 - [Addons](docs/addons.md): cert approver, metrics-server, local-path-provisioner, lifecycle
 - [Upgrading to v1](docs/upgrading-to-v1.md): v0.3.0 to 1.0.0 migration
+- [Security](docs/security.md): state, network exposure, disk encryption, SecureBoot
 - [Renewing an expired talosconfig](docs/talosconfig-renewal.md)
