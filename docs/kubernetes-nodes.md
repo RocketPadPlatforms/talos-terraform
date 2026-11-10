@@ -42,6 +42,26 @@ fixed allowed set: `kubernetes.io/hostname`, `kubernetes.io/arch`,
 under `kubelet.kubernetes.io/` or `node.kubernetes.io/`. Use your own domain, for
 example `example.com/pool`. Set restricted labels with `kubectl label` instead.
 
+## Hostnames
+
+`node_groups.*.nodes.*.hostname` sets the node's hostname. Its first label is the
+Kubernetes node name (the full FQDN only with `KubeNodeConfig`
+`registerWithFQDN`), so first labels must be unique. Without it, Talos generates
+one (`talos-xxx-xxx`).
+
+```hcl
+nodes = {
+  w1 = { ip_address = "10.0.1.1", hostname = "worker-1" }
+}
+```
+
+Setting, changing or removing `hostname` on a running worker renames it
+(removing it goes back to the generated name): the kubelet registers a new Node
+and the old one stays `NotReady`. Remove it with
+`kubectl delete node <old-name>`. Set `hostname` on controlplanes when they are
+created; renaming a running controlplane is untested. To override the value
+with a config patch, see [Config patches](config-patches.md#hostnames).
+
 ## Scheduling on controlplanes
 
 Controlplanes carry a `NoSchedule` taint by default. Set

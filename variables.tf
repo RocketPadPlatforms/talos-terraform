@@ -140,6 +140,7 @@ variable "node_groups" {
     config_patches = optional(list(string), [])
     nodes = map(object({
       ip_address         = string
+      hostname           = optional(string)
       install_disk_match = optional(string)
       labels             = optional(map(string), {})
       annotations        = optional(map(string), {})
@@ -181,6 +182,27 @@ variable "node_groups" {
         for g in values(var.node_groups) : keys(g.nodes)
     ])))
     error_message = "Node names must be unique across all groups."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for g in values(var.node_groups) : [
+        for n in values(g.nodes) :
+        can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$", n.hostname)) && length(n.hostname) <= 253
+        if n.hostname != null
+      ]
+    ]))
+    error_message = "Every node hostname must be a lowercase RFC 1123 name (labels of 1-63 characters of a-z, 0-9 and '-', at most 253 characters)."
+  }
+
+  // Kubernetes registers the first label only (unless registerWithFQDN).
+  validation {
+    condition = length(flatten([
+      for g in values(var.node_groups) : [for n in values(g.nodes) : split(".", n.hostname)[0] if n.hostname != null]
+      ])) == length(distinct(flatten([
+        for g in values(var.node_groups) : [for n in values(g.nodes) : split(".", n.hostname)[0] if n.hostname != null]
+    ])))
+    error_message = "Node hostnames must be unique across all groups, compared by their first label (the Kubernetes node name)."
   }
 
   validation {
