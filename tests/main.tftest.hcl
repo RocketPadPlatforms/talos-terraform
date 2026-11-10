@@ -224,6 +224,151 @@ run "scheduling_and_tls" {
   }
 }
 
+run "defaults_add_no_addon_patches" {
+  command = apply
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = !anytrue(flatten([
+      for key in ["controlplane-cp1", "worker-w1"] : [
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig"], try(yamldecode(p).kind, ""))
+      ]
+    ]))
+    error_message = "Defaults must not add addon or CNI patches."
+  }
+}
+
+run "addons_metrics_server" {
+  command = apply
+
+  variables {
+    addons = { metrics_server = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ] == ["kubelet-serving-cert-approver", "metrics-server"]
+    error_message = "Controlplane should get the approver and metrics-server inline manifests."
+  }
+
+  assert {
+    condition = length([
+      for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
+      p if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ]) == 0
+    error_message = "Workers must not get inline manifests."
+  }
+
+  assert {
+    condition = alltrue([
+      for key in ["controlplane-cp1", "worker-w1"] : anytrue([
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        try(yamldecode(p).config.serverTLSBootstrap, false)
+      ])
+    ])
+    error_message = "metrics-server should enable serverTLSBootstrap on all nodes."
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(yamldecode(p).name, "") == "metrics-server" && strcontains(yamldecode(p).manifest, "kind: Deployment")
+    ])
+    error_message = "The metrics-server inline manifest should contain the vendored Deployment."
+  }
+}
+
+run "addons_cert_approver_only" {
+  command = apply
+
+  variables {
+    addons = { kubelet_cert_approver = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ] == ["kubelet-serving-cert-approver"]
+    error_message = "Controlplane should get only the approver inline manifest."
+  }
+
+  assert {
+    condition = alltrue([
+      for key in ["controlplane-cp1", "worker-w1"] : anytrue([
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        try(yamldecode(p).config.serverTLSBootstrap, false)
+      ])
+    ])
+    error_message = "The approver should enable serverTLSBootstrap on all nodes."
+  }
+}
+
+run "addons_tls_bootstrap_not_duplicated" {
+  command = apply
+
+  variables {
+    kubelet_server_tls_bootstrap = true
+    addons                       = { metrics_server = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  assert {
+    condition = length([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      p if try(yamldecode(p).kind, "") == "KubeletConfig"
+    ]) == 1
+    error_message = "Exactly one KubeletConfig patch expected."
+  }
+}
+
 run "validation_role" {
   command = plan
 
