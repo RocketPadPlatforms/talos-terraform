@@ -1,0 +1,25 @@
+apiVersion: vendir.k14s.io/v1alpha1
+directories:
+- contents:
+  - helmChart:
+      appVersion: 1.20.4
+      version: 1.20.4
+    path: cilium
+  - githubRelease:
+      tag: v0.9.1
+      url: https://api.github.com/repos/kubernetes-sigs/metrics-server/releases/427927438
+    path: addons/metrics-server
+  - git:
+      commitTitle: 'release(v0.12.1): freeze image tags...'
+      sha: f72897c68e38185aeca848952d10a094054642ba
+      tags:
+      - v0.12.1
+    path: addons/kubelet-serving-cert-approver
+  - git:
+      commitTitle: 'chore: release v0.0.37...'
+      sha: 49b2be8e26d6d34c9afaa21fa33108d2e82f8955
+      tags:
+      - v0.0.37
+    path: addons/local-path-provisioner
+  path: vendor
+kind: LockConfig
