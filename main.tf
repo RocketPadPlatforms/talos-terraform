@@ -191,7 +191,7 @@ resource "talos_machine_configuration_apply" "this" {
       })
     ] : [],
     local.addon_patches_all,
-    each.value.role == "controlplane" ? local.addon_patches_controlplane : [],
+    each.value.role == "controlplane" ? concat(local.cilium_patches_controlplane, local.addon_patches_controlplane) : [],
     var.config_patches,
     each.value.group_patches,
     each.value.node_patches
