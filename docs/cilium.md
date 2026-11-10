@@ -23,6 +23,11 @@ the `KubeFlannelCNIConfig` document and disables kube-proxy
 
 `kubernetes_version` is required: the chart needs it to render.
 
+Rendering uses the `helm` provider without cluster access. If your default
+`helm` provider is configured from this module's outputs, pass the module an
+unconfigured one (see [Requirements](../README.md#requirements)), or planning
+fails with a dependency cycle.
+
 ## Values
 
 Each `configuration` entry is a YAML document of Helm values, applied on top of

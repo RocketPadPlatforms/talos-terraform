@@ -13,6 +13,25 @@ secrets, applies each node's configuration, bootstraps the cluster and emits a
 - `siderolabs/talos` provider >= 0.12.0
 - `hashicorp/helm` provider >= 3.0 (renders Cilium locally, needs no cluster access)
 
+The module needs the `helm` provider even when Cilium is off; run `tofu init
+-upgrade` after updating the module. If your root module configures its default
+`helm` provider from this module's outputs (e.g. `kubernetes_client_configuration`),
+planning fails with a dependency cycle. Pass the module an unconfigured provider
+instead:
+
+```hcl
+provider "helm" {
+  alias = "render"
+}
+
+module "talos" {
+  # ...
+  providers = {
+    helm = helm.render
+  }
+}
+```
+
 Upgrading from v0.3.0? See [Upgrading to v1](docs/upgrading-to-v1.md).
 
 ## Usage
