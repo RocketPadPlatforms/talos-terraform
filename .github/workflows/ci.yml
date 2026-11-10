@@ -23,3 +23,9 @@ jobs:
       - uses: RocketPadPlatforms/github-actions/actions/setup-opentofu@v1
       - run: tofu init -backend=false -input=false
       - run: tofu test
+
+  vendir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: RocketPadPlatforms/github-actions/actions/vendir-check@v1
