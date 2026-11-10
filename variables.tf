@@ -90,6 +90,8 @@ variable "kubelet_server_tls_bootstrap" {
   description = <<-EOT
     Enable kubelet server TLS bootstrapping on all nodes.
     Requires a CSR approver (e.g. kubelet-serving-cert-approver).
+    Enabled automatically by addons.kubelet_cert_approver and
+    addons.metrics_server.
   EOT
   type        = bool
   default     = false

@@ -183,13 +183,15 @@ resource "talos_machine_configuration_apply" "this" {
         length(each.value.taints) > 0 ? { taints = each.value.taints } : {}
       ))
     ] : [],
-    var.kubelet_server_tls_bootstrap ? [
+    var.kubelet_server_tls_bootstrap || local.kubelet_cert_approver_enabled ? [
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "KubeletConfig"
         config     = { serverTLSBootstrap = true }
       })
     ] : [],
+    local.addon_patches_all,
+    each.value.role == "controlplane" ? local.addon_patches_controlplane : [],
     var.config_patches,
     each.value.group_patches,
     each.value.node_patches
