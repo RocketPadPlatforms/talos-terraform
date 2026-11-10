@@ -24,6 +24,14 @@ mock_provider "talos" {
   }
 }
 
+mock_provider "helm" {
+  mock_data "helm_template" {
+    defaults = {
+      manifest = "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: cilium\n  namespace: kube-system\n"
+    }
+  }
+}
+
 variables {
   talos_version      = "v1.14"
   kubernetes_version = "1.36.6"
@@ -497,6 +505,119 @@ run "addons_local_path_provisioner_default_class" {
     ]) == "true"
     error_message = "StorageClass should be marked default."
   }
+}
+
+run "cilium" {
+  command = apply
+
+  variables {
+    cni    = { name = "cilium", configuration = ["hubble:\n  relay:\n    enabled: true\n"] }
+    addons = { metrics_server = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(yamldecode(p).kind == "KubeFlannelCNIConfig" && yamldecode(p)["$patch"] == "delete", false)
+    ])
+    error_message = "Controlplane should delete the Flannel CNI config."
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(yamldecode(p).kind == "KubeProxyConfig" && yamldecode(p).enabled == false, false)
+    ])
+    error_message = "Controlplane should disable kube-proxy."
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(yamldecode(p).name == "cilium" && strcontains(yamldecode(p).manifest, "name: cilium"), false)
+    ])
+    error_message = "Controlplane should get the rendered cilium inline manifest."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ] == ["cilium", "kubelet-serving-cert-approver", "metrics-server"]
+    error_message = "Cilium should come before the addon manifests."
+  }
+
+  assert {
+    condition = !anytrue([
+      for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
+      contains(["KubeFlannelCNIConfig", "KubeProxyConfig", "KubeInlineManifestConfig"], try(yamldecode(p).kind, ""))
+    ])
+    error_message = "Workers must not get CNI patches."
+  }
+}
+
+run "cilium_requires_kubernetes_version" {
+  command = plan
+
+  variables {
+    kubernetes_version = null
+    cni                = { name = "cilium" }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [data.helm_template.cilium]
+}
+
+run "validation_cni_name" {
+  command = plan
+
+  variables {
+    cni = { name = "calico" }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.cni]
+}
+
+run "validation_cni_flannel_configuration" {
+  command = plan
+
+  variables {
+    cni = { configuration = ["a: b\n"] }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.cni]
 }
 
 run "validation_role" {
