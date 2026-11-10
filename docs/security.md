@@ -194,25 +194,34 @@ covered by `EPHEMERAL` encryption.
 
 ### Existing nodes
 
-Talos encrypts a volume only when it is first provisioned. Adding or changing
-`disk_encryption` on running nodes updates their configuration but leaves the
-volumes as they are. To encrypt a node that is already running, reprovision
-it, one node at a time:
+**Never add, remove or change `disk_encryption` on a group whose nodes are
+already provisioned.** Talos encrypts a volume only when it is empty. A node
+whose existing, unencrypted volume suddenly has an encryption config (or whose
+encrypted volume loses it) fails to bring the volume up with
+`block dev type mismatch` on its next reboot, which may be an upgrade, a power
+loss or a crash. The same goes for changing `method` or `kms_endpoint`: the key
+in slot 0 is replaced, and the new key cannot unlock the volume.
 
-1. Drain the node (`kubectl drain`).
-2. Remove the node from `node_groups` and `tofu apply`. The module resets the
-   node, which wipes `STATE` and `EPHEMERAL` and returns it to maintenance
-   mode. For a control plane, the reset is not graceful: remove its etcd member
-   afterwards with `talosctl -n <other-cp-ip> etcd remove-member <hostname>`,
-   and never take etcd below quorum. Removing the first control plane (by
+To encrypt running nodes, create a new group with `disk_encryption` and move
+the nodes into it one at a time, each with two separate applies (moving a node
+between groups of the same role in a single apply only changes its config,
+which is exactly the mismatch above):
+
+1. Drain the node (`kubectl drain`). For a control plane, make it leave etcd
+   while it still works: `talosctl -n <ip> etcd leave`. Only do this with at
+   least three control planes; a single control plane cannot be migrated this
+   way, and two would lose quorum.
+2. Remove the node from the old group and `tofu apply`. The module resets the
+   node, which wipes `STATE` and `EPHEMERAL` (including local-path volumes)
+   and returns it to maintenance mode. Removing the first control plane (by
    name) also moves the bootstrap and kubeconfig target to another node;
    review the plan before applying.
-3. Add the node back and `tofu apply`. It is provisioned with encrypted
-   volumes. Check with `talosctl -n <ip> get volumestatus`.
-
-Do not change `method` on provisioned nodes. Talos keeps the LUKS key slots in
-sync with the configuration, and swapping the only key in one apply can leave
-the node unable to unlock its disks. To switch methods, reprovision the node.
+3. The reset does not touch dedicated system volumes. If the node has any,
+   wipe their partitions now, in maintenance mode:
+   `talosctl -n <ip> wipe disk --insecure <partition>` (find them with
+   `talosctl -n <ip> get discoveredvolumes --insecure`).
+4. Add the node to the new group and `tofu apply`. It is provisioned with
+   encrypted volumes. Check with `talosctl -n <ip> get volumestatus`.
 
 ## SecureBoot
 
