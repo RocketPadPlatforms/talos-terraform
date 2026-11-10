@@ -128,10 +128,14 @@ variable "node_groups" {
       installer         = optional(string)
     })
     install_disk_match = optional(string)
-    labels             = optional(map(string), {})
-    annotations        = optional(map(string), {})
-    taints             = optional(map(string), {})
-    config_patches     = optional(list(string), [])
+    disk_encryption = optional(object({
+      method       = string
+      kms_endpoint = optional(string)
+    }))
+    labels         = optional(map(string), {})
+    annotations    = optional(map(string), {})
+    taints         = optional(map(string), {})
+    config_patches = optional(list(string), [])
     nodes = map(object({
       ip_address         = string
       install_disk_match = optional(string)
@@ -218,6 +222,34 @@ variable "node_groups" {
       )
     ]))
     error_message = "Taint values must match '[<value>:]NoSchedule|PreferNoSchedule|NoExecute'."
+  }
+
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) :
+      g.disk_encryption == null || contains(["tpm", "nodeID", "kms"], try(g.disk_encryption.method, ""))
+    ])
+    error_message = "disk_encryption.method must be 'tpm', 'nodeID' or 'kms'."
+  }
+
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) : try(
+        g.disk_encryption.method == "kms"
+        ? can(regex("^https://", g.disk_encryption.kms_endpoint))
+        : g.disk_encryption.kms_endpoint == null,
+        true
+      )
+    ])
+    error_message = "disk_encryption.kms_endpoint is required for method 'kms', only allowed there, and must be an https:// URL."
+  }
+
+  validation {
+    condition = alltrue([
+      for g in values(var.node_groups) :
+      try(g.disk_encryption.method, "") != "tpm" || g.image.version == null || g.image.secureboot
+    ])
+    error_message = "disk_encryption.method 'tpm' requires image.secureboot = true on Image Factory groups."
   }
 }
 

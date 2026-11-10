@@ -279,7 +279,7 @@ run "defaults_add_no_addon_patches" {
     condition = !anytrue(flatten([
       for key in ["controlplane-cp1", "worker-w1"] : [
         for p in talos_machine_configuration_apply.this[key].config_patches :
-        contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig"], try(yamldecode(p).kind, ""))
+        contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig"], try(yamldecode(p).kind, ""))
       ]
     ]))
     error_message = "Defaults must not add addon or CNI patches."
@@ -304,7 +304,7 @@ run "null_cni_and_addons_use_defaults" {
   assert {
     condition = !anytrue([
       for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
-      contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig"], try(yamldecode(p).kind, ""))
+      contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig"], try(yamldecode(p).kind, ""))
     ])
     error_message = "Null cni and addons must behave like the defaults."
   }
@@ -615,6 +615,182 @@ run "cilium" {
     ])
     error_message = "Workers must not get CNI patches."
   }
+}
+
+run "disk_encryption" {
+  command = apply
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { version = "v1.14.5", secureboot = true }
+        disk_encryption = { method = "tpm" }
+        config_patches = [
+          yamlencode({
+            apiVersion = "v1alpha1"
+            kind       = "VolumeConfig"
+            name       = "STATE"
+            encryption = { keys = [{ slot = 0, tpm = { options = { pcrs = [7, 11] } } }] }
+          })
+        ]
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+      wk = {
+        role            = "worker"
+        image           = { installer = "factory.talos.dev/installer:v1.14.0" }
+        disk_encryption = { method = "nodeID" }
+        nodes           = { w1 = { ip_address = "10.0.0.2" } }
+      }
+      kms = {
+        role            = "worker"
+        image           = { installer = "factory.talos.dev/installer:v1.14.0" }
+        disk_encryption = { method = "kms", kms_endpoint = "https://kms.example:4443" }
+        nodes           = { k1 = { ip_address = "10.0.0.3" } }
+      }
+      plain = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { p1 = { ip_address = "10.0.0.4" } }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "VolumeConfig"
+    ] == ["STATE", "EPHEMERAL", "STATE"]
+    error_message = "Module STATE and EPHEMERAL documents must come before the group's STATE override."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).encryption if try(yamldecode(p).kind, "") == "VolumeConfig"
+      ][0] == {
+      provider = "luks2"
+      keys     = [{ slot = 0, tpm = { checkSecurebootStatusOnEnroll = true } }]
+    }
+    error_message = "tpm STATE key should check SecureBoot on enroll and not lock to STATE."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+    ][1] == [{ slot = 0, lockToState = true, tpm = { checkSecurebootStatusOnEnroll = true } }]
+    error_message = "tpm EPHEMERAL key should lock to STATE."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+    ] == [[{ slot = 0, nodeID = {} }], [{ slot = 0, lockToState = true, nodeID = {} }]]
+    error_message = "nodeID group should get STATE and EPHEMERAL nodeID keys."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["worker-k1"].config_patches :
+      yamldecode(p).encryption.keys if try(yamldecode(p).kind, "") == "VolumeConfig"
+    ][0] == [{ slot = 0, kms = { endpoint = "https://kms.example:4443" } }]
+    error_message = "kms group should get a kms key with the endpoint."
+  }
+
+  assert {
+    condition = length([
+      for p in talos_machine_configuration_apply.this["worker-p1"].config_patches :
+      p if try(yamldecode(p).kind, "") == "VolumeConfig"
+    ]) == 0
+    error_message = "Groups without disk_encryption must get no VolumeConfig."
+  }
+}
+
+run "validation_disk_encryption_method" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { installer = "x" }
+        disk_encryption = { method = "static" }
+        nodes           = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_disk_encryption_kms_endpoint_missing" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { installer = "x" }
+        disk_encryption = { method = "kms" }
+        nodes           = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_disk_encryption_kms_endpoint_http" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { installer = "x" }
+        disk_encryption = { method = "kms", kms_endpoint = "http://kms.example" }
+        nodes           = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_disk_encryption_endpoint_without_kms" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { installer = "x" }
+        disk_encryption = { method = "tpm", kms_endpoint = "https://kms.example" }
+        nodes           = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
+}
+
+run "validation_disk_encryption_tpm_without_secureboot" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role            = "controlplane"
+        image           = { version = "v1.14.5" }
+        disk_encryption = { method = "tpm" }
+        nodes           = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.node_groups]
 }
 
 run "cilium_requires_kubernetes_version" {
