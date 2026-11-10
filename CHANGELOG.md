@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/RocketPadPlatforms/talos-terraform/compare/v1.0.1...v1.1.0) (2026-11-10)
+
+
+### Features
+
+* **talos:** add optional node hostname ([803e69d](https://github.com/RocketPadPlatforms/talos-terraform/commit/803e69daa58735295f68c56660a67326ff95b92b))
+
 ## [1.0.1](https://github.com/RocketPadPlatforms/talos-terraform/compare/v0.3.0...v1.0.1) (2026-11-10)
 
 
