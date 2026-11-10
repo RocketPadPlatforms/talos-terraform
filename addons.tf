@@ -38,6 +38,7 @@ locals {
   )
 
   local_path_provisioner_path = "/var/mnt/local-path-provisioner"
+  local_path_helper_image     = "docker.io/library/busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4"
 
   local_path_provisioner_documents = [
     for d in split("\n---\n", file("${path.module}/deps/vendor/addons/local-path-provisioner/deploy/local-path-storage.yaml")) :
@@ -55,6 +56,7 @@ locals {
               paths = [local.local_path_provisioner_path]
             }]
           })
+          "helperPod.yaml" = replace(try(doc.data["helperPod.yaml"], ""), "image: docker.io/library/busybox\n", "image: ${local.local_path_helper_image}\n")
         })
       }
       Namespace = {
