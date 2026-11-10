@@ -11,7 +11,8 @@ variable "cni" {
     name          = optional(string, "flannel")
     configuration = optional(list(string), [])
   })
-  default = {}
+  default  = {}
+  nullable = false
 
   validation {
     condition     = contains(["flannel", "cilium"], var.cni.name)

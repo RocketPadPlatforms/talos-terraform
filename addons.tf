@@ -17,7 +17,8 @@ variable "addons" {
       default_storage_class = optional(bool, false)
     }), {})
   })
-  default = {}
+  default  = {}
+  nullable = false
 }
 
 locals {
