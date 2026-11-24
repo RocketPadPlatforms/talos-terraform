@@ -3,29 +3,40 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: RocketPadPlatforms/github-actions/actions/opentofu-fmt-check@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: RocketPadPlatforms/github-actions/actions/opentofu-fmt-check@f6d860561e1cd1f11398ea5538cf4898d1cb8a7a # v1.6.0
 
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: RocketPadPlatforms/github-actions/actions/opentofu-validate@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: RocketPadPlatforms/github-actions/actions/opentofu-validate@f6d860561e1cd1f11398ea5538cf4898d1cb8a7a # v1.6.0
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: RocketPadPlatforms/github-actions/actions/setup-opentofu@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: RocketPadPlatforms/github-actions/actions/setup-opentofu@f6d860561e1cd1f11398ea5538cf4898d1cb8a7a # v1.6.0
       - run: tofu init -backend=false -input=false
       - run: tofu test
 
   vendir:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: RocketPadPlatforms/github-actions/actions/vendir-check@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: RocketPadPlatforms/github-actions/actions/vendir-check@f6d860561e1cd1f11398ea5538cf4898d1cb8a7a # v1.6.0
