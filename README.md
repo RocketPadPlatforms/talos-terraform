@@ -1,4 +1,4 @@
-# Talos
+# talos-terraform
 
 This repository contains a Terraform / OpenTofu module to deploy a Kubernetes
 cluster on bare-metal servers using [Talos](https://www.talos.dev/). Nodes are
@@ -38,7 +38,7 @@ Upgrading from v0.3.0? See [Upgrading to v1](docs/upgrading-to-v1.md).
 
 ```hcl
 module "talos" {
-  source = "path/to/talos"
+  source = "git::https://github.com/RocketPadPlatforms/talos-terraform.git?ref=v1.1.0" # x-release-please-version
 
   cluster_name = "my-cluster"
 
@@ -135,6 +135,9 @@ The module's state stores the Talos machine secrets and the cluster
 `kubeconfig` in plaintext: use an encrypted remote backend and restrict who can
 read it. See [Security](docs/security.md) for state handling, network exposure,
 disk encryption (`node_groups.*.disk_encryption`), SecureBoot and more.
+
+To report a vulnerability, follow the
+[security policy](https://github.com/RocketPadPlatforms/.github/blob/main/SECURITY.md).
 
 ## Documentation
 
