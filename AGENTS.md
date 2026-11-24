@@ -76,17 +76,17 @@ nix develop
 Initialize, plan, apply (local test state):
 
 ```bash
-opentofu init
-opentofu plan      # no -out needed for ad-hoc checks
-opentofu apply
+tofu init
+tofu plan      # no -out needed for ad-hoc checks
+tofu apply
 ```
 
 Format, validate, and test (mirrors CI jobs):
 
 ```bash
-opentofu fmt -check -recursive
-opentofu validate
-opentofu test
+tofu fmt -check -recursive
+tofu validate
+tofu test
 ```
 
 Regenerate the README docs block (after changing variables or outputs):
@@ -108,7 +108,7 @@ Destroy nodes when decommissioning (also triggers cluster reset/reboot on
 destroy by design):
 
 ```bash
-opentofu destroy
+tofu destroy
 ```
 
 > TODO: no explicit `lint` or `debug` commands exist beyond `fmt`, `validate`,
@@ -117,7 +117,7 @@ opentofu destroy
 
 # Code Style & Conventions
 
-- HCL 1.x; format with `opentofu fmt` (enforced in CI).
+- HCL 1.x; format with `tofu fmt` (enforced in CI).
 - Module inputs are typed and described; optional fields use `optional(...)`
   (see `variables.tf`).
 - Version constraints use `>=` in `version.tf`; downstream consumers pin.
@@ -208,18 +208,18 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
     `disk_encryption` method, KMS endpoint and tpm without SecureBoot,
     hostname format and uniqueness).
 - CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
-  - `fmt` job runs `opentofu fmt -check -recursive`.
-  - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
-  - `test` job runs `opentofu init -backend=false -input=false` + `opentofu test`.
+  - `fmt` job runs `tofu fmt -check -recursive`.
+  - `validate` job runs `tofu init -backend=false` + `tofu validate`.
+  - `test` job runs `tofu init -backend=false -input=false` + `tofu test`.
   - `vendir` job runs `vendir sync -l` in `deps/` and fails on any diff.
 - Run the same checks locally:
 
 ```bash
-opentofu fmt -check -recursive && opentofu validate && opentofu test
+tofu fmt -check -recursive && tofu validate && tofu test
 ```
 
 > TODO: no real-cluster smoke test is defined. To validate against live nodes,
-> provision nodes in maintenance mode and `opentofu apply` a test config.
+> provision nodes in maintenance mode and `tofu apply` a test config.
 
 # Security & Compliance
 
@@ -233,11 +233,12 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
 - Consumers should use an encrypted remote backend and restrict state access;
   see [docs/security.md](docs/security.md). This module
   itself does not configure a backend (state lives with the consumer).
+- Vulnerability reports follow the organization-wide security policy in
+  `RocketPadPlatforms/.github` (GitHub private vulnerability reporting); this
+  repository has no `SECURITY.md` of its own.
 
 > TODO: no dependency scanning (e.g. trivy, osv-scanner) or provider
 > signature/checksum policy is configured.
-> `terraform.tfvars` in the working tree currently contains values
-> (`192.168.13.x`) that look like a leftover test environment — do not commit.
 
 # Agent Guardrails
 
