@@ -1,21 +1,25 @@
 output "talosconfig" {
-  value     = data.talos_client_configuration.this.talos_config
-  sensitive = true
+  description = "talosconfig with an admin client certificate, targeting the control plane nodes."
+  value       = data.talos_client_configuration.this.talos_config
+  sensitive   = true
 }
 
 output "talos_machine_secrets" {
-  value     = resource.talos_machine_secrets.this.machine_secrets
-  sensitive = true
+  description = "The cluster's machine secrets, including the Talos, Kubernetes and etcd CA keys."
+  value       = resource.talos_machine_secrets.this.machine_secrets
+  sensitive   = true
 }
 
 output "kubeconfig" {
-  value     = resource.talos_cluster_kubeconfig.this.kubeconfig_raw
-  sensitive = true
+  description = "Admin kubeconfig for the cluster."
+  value       = resource.talos_cluster_kubeconfig.this.kubeconfig_raw
+  sensitive   = true
 }
 
 output "kubernetes_client_configuration" {
-  value     = resource.talos_cluster_kubeconfig.this.kubernetes_client_configuration
-  sensitive = true
+  description = "Admin client configuration for the Kubernetes API (host, CA certificate, client certificate and key)."
+  value       = resource.talos_cluster_kubeconfig.this.kubernetes_client_configuration
+  sensitive   = true
 }
 
 output "manifests_sync_command" {

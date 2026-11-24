@@ -122,11 +122,11 @@ No modules.
 | Name | Description |
 | ---- | ----------- |
 | <a name="output_installer_images"></a> [installer\_images](#output\_installer\_images) | The resolved installer image reference for each node group. |
-| <a name="output_kubeconfig"></a> [kubeconfig](#output\_kubeconfig) | n/a |
-| <a name="output_kubernetes_client_configuration"></a> [kubernetes\_client\_configuration](#output\_kubernetes\_client\_configuration) | n/a |
+| <a name="output_kubeconfig"></a> [kubeconfig](#output\_kubeconfig) | Admin kubeconfig for the cluster. |
+| <a name="output_kubernetes_client_configuration"></a> [kubernetes\_client\_configuration](#output\_kubernetes\_client\_configuration) | Admin client configuration for the Kubernetes API (host, CA certificate, client certificate and key). |
 | <a name="output_manifests_sync_command"></a> [manifests\_sync\_command](#output\_manifests\_sync\_command) | talosctl command that re-applies the module's bootstrap manifests (Cilium,<br/>addons) and prunes removed ones, without changing the Kubernetes version.<br/>Run it with --dry-run first. Null when kubernetes\_version is unset. |
-| <a name="output_talos_machine_secrets"></a> [talos\_machine\_secrets](#output\_talos\_machine\_secrets) | n/a |
-| <a name="output_talosconfig"></a> [talosconfig](#output\_talosconfig) | n/a |
+| <a name="output_talos_machine_secrets"></a> [talos\_machine\_secrets](#output\_talos\_machine\_secrets) | The cluster's machine secrets, including the Talos, Kubernetes and etcd CA keys. |
+| <a name="output_talosconfig"></a> [talosconfig](#output\_talosconfig) | talosconfig with an admin client certificate, targeting the control plane nodes. |
 <!-- END_TF_DOCS -->
 
 ## Security
