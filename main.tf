@@ -234,6 +234,13 @@ resource "talos_machine_configuration_apply" "this" {
     reboot   = true
     graceful = false
   }
+
+  lifecycle {
+    precondition {
+      condition     = !var.addons.control_plane_metrics.enabled || can(cidrhost("${each.value.ip_address}/${strcontains(each.value.ip_address, ":") ? 128 : 32}", 0))
+      error_message = "Node ${each.value.node_name}: addons.control_plane_metrics needs ip_address to be an IP address, got ${each.value.ip_address}."
+    }
+  }
 }
 
 resource "talos_machine_bootstrap" "this" {
