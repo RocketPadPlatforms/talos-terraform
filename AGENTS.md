@@ -29,7 +29,9 @@ maintenance mode.
 - `addons.tf` — `addons` input and the addon patches: inline manifests for
   kubelet-serving-cert-approver, metrics-server and local-path-provisioner
   (adapted for Talos, helper image pinned by tag and digest and updated by a
-  Renovate regex manager), plus the local-path `UserVolumeConfig`.
+  Renovate regex manager), plus the local-path `UserVolumeConfig`; and the
+  generated control-plane metrics discovery Services with their `extraArgs`
+  and `NetworkRuleConfig` patches.
 - `cilium.tf` — `cni` input; renders the vendored Cilium chart with
   `helm_template` and builds the control-plane CNI patches.
 - `deps/` — `vendir.yml` / `vendir.lock.yml` and the vendored upstream content
@@ -141,9 +143,11 @@ opentofu destroy
   `config_patches`. New generated patches go after the existing ones so tests'
   patch indexes stay stable. All
   patches are YAML strings, typically built with `yamlencode`.
-- Talos appends list entries when merging patches: overriding a generated
-  document with lists (e.g. `VolumeConfig` keys) needs a `$patch: delete`
-  document followed by a full replacement.
+- Talos usually appends list entries when merging patches: overriding a
+  generated document with lists (e.g. `VolumeConfig` keys) needs a
+  `$patch: delete` document followed by a full replacement. Some lists are
+  replaced instead (e.g. `NetworkRuleConfig` `ingress`); check with
+  `talosctl machineconfig patch` before relying on either.
 - Sensitive values are exposed only through `sensitive = true` outputs.
 - Commit messages follow Conventional Commits with scope of the affected area,
   e.g. `feat(talos): ...`, `chore(talos): bump talos provider`, `fix(*): ...`.
@@ -206,7 +210,8 @@ Cluster endpoint derivation: `cluster_endpoint` var, else
     names, image installer vs. version, talos_version floor, taint effect,
     `cni` name/configuration, Cilium without `kubernetes_version`,
     `disk_encryption` method, KMS endpoint and tpm without SecureBoot,
-    hostname format and uniqueness).
+    hostname format and uniqueness, `control_plane_metrics` allowed_subnets
+    and node IP addresses).
 - CI validates the module via GitHub Actions (`.github/workflows/ci.yml`):
   - `fmt` job runs `opentofu fmt -check -recursive`.
   - `validate` job runs `opentofu init -backend=false` + `opentofu validate`.
@@ -283,8 +288,10 @@ opentofu fmt -check -recursive && opentofu validate && opentofu test
 - `kubelet_server_tls_bootstrap` — enables kubelet serving certificate
   bootstrapping on all nodes (requires a CSR approver).
 - `addons` — `kubelet_cert_approver`, `metrics_server`,
-  `local_path_provisioner` (`enabled` plus per-addon settings). New addons add
-  a field, a `deps/vendir.yml` entry, and an inline manifest entry.
+  `local_path_provisioner`, `control_plane_metrics` (`enabled` plus per-addon
+  settings; `control_plane_metrics.allowed_subnets` extends the metrics
+  firewall sources beyond node IPs). New addons add a field, a
+  `deps/vendir.yml` entry (when vendored), and an inline manifest entry.
 - `cni` — `name` (`flannel` or `cilium`) and `configuration` (Cilium Helm
   values over the module's base values).
 - `manifests_sync_command` output — `talosctl upgrade-k8s` at the current
