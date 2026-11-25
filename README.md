@@ -38,7 +38,7 @@ Upgrading from v0.3.0? See [Upgrading to v1](docs/upgrading-to-v1.md).
 
 ```hcl
 module "talos" {
-  source = "git::https://github.com/RocketPadPlatforms/talos-terraform.git?ref=v1.1.0" # x-release-please-version
+  source = "git::https://github.com/RocketPadPlatforms/talos-terraform.git?ref=v1.2.0" # x-release-please-version
 
   cluster_name = "my-cluster"
 
