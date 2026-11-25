@@ -279,7 +279,7 @@ run "defaults_add_no_addon_patches" {
     condition = !anytrue(flatten([
       for key in ["controlplane-cp1", "worker-w1"] : [
         for p in talos_machine_configuration_apply.this[key].config_patches :
-        contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig"], try(yamldecode(p).kind, ""))
+        contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig", "NetworkRuleConfig", "KubeControllerManagerConfig", "KubeSchedulerConfig", "EtcdMemberConfig"], try(yamldecode(p).kind, "")) || can(yamldecode(p).cluster)
       ]
     ]))
     error_message = "Defaults must not add addon or CNI patches."
@@ -304,7 +304,7 @@ run "null_cni_and_addons_use_defaults" {
   assert {
     condition = !anytrue([
       for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
-      contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig"], try(yamldecode(p).kind, ""))
+      contains(["KubeInlineManifestConfig", "UserVolumeConfig", "KubeFlannelCNIConfig", "KubeProxyConfig", "VolumeConfig", "NetworkRuleConfig", "KubeControllerManagerConfig", "KubeSchedulerConfig", "EtcdMemberConfig"], try(yamldecode(p).kind, "")) || can(yamldecode(p).cluster)
     ])
     error_message = "Null cni and addons must behave like the defaults."
   }
@@ -361,6 +361,187 @@ run "addons_metrics_server" {
       try(yamldecode(p).name, "") == "metrics-server" && strcontains(yamldecode(p).manifest, "kind: Deployment")
     ])
     error_message = "The metrics-server inline manifest should contain the vendored Deployment."
+  }
+}
+
+run "addons_control_plane_metrics" {
+  command = apply
+
+  variables {
+    addons = { control_plane_metrics = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = {
+          cp1 = { ip_address = "10.0.0.1" }
+          cp2 = { ip_address = "fd00::1" }
+        }
+      }
+      wk = {
+        role  = "worker"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { w1 = { ip_address = "10.0.0.2" } }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      [
+        for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+        yamldecode(p).cluster if can(yamldecode(p).cluster)
+      ] == [{ etcd = { extraArgs = { "listen-metrics-urls" = "http://0.0.0.0:2381" } } }]
+      && [
+        for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+        yamldecode(p).kind if try(yamldecode(p).extraArgs["bind-address"], "") == "0.0.0.0"
+      ] == ["KubeControllerManagerConfig", "KubeSchedulerConfig"]
+    )
+    error_message = "Controlplane should expose etcd via v1alpha1 and controller-manager/scheduler via their Talos 1.14 documents."
+  }
+
+  assert {
+    condition = alltrue([
+      for key in ["controlplane-cp1", "controlplane-cp2"] : anytrue([
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        try(
+          yamldecode(p).kind == "NetworkRuleConfig"
+          && yamldecode(p).name == "control-plane-metrics-ingress"
+          && yamldecode(p).portSelector == { ports = [2381, 10257, 10259], protocol = "tcp" }
+          && sort(yamldecode(p).ingress[*].subnet) == sort(["10.0.0.1/32", "fd00::1/128", "10.0.0.2/32", "10.244.0.0/16"]),
+          false
+        )
+      ])
+    ])
+    error_message = "Every controlplane should limit the metrics ports to node IPs and allowed_subnets."
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).name if try(yamldecode(p).kind, "") == "KubeInlineManifestConfig"
+    ] == ["control-plane-metrics"]
+    error_message = "Controlplane should get the control-plane-metrics inline manifest."
+  }
+
+  assert {
+    condition = anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      try(sort([
+        for d in split("---\n", yamldecode(p).manifest) : "${yamldecode(d).metadata.name}=${yamldecode(d).spec.selector.component}:${yamldecode(d).spec.ports[0].port}"
+        ]) == sort([
+        "kube-controller-manager-prometheus-discovery=kube-controller-manager:10257",
+        "kube-scheduler-prometheus-discovery=kube-scheduler:10259",
+        "kube-etcd-prometheus-discovery=kube-controller-manager:2381",
+      ]), false) if try(yamldecode(p).name, "") == "control-plane-metrics"
+    ])
+    error_message = "The inline manifest should contain the three discovery Services."
+  }
+
+  assert {
+    condition = !anytrue([
+      for p in talos_machine_configuration_apply.this["worker-w1"].config_patches :
+      contains(["NetworkRuleConfig", "KubeInlineManifestConfig", "KubeControllerManagerConfig", "KubeSchedulerConfig", "EtcdMemberConfig"], try(yamldecode(p).kind, "")) || can(yamldecode(p).cluster)
+    ])
+    error_message = "Workers must not get metrics patches."
+  }
+
+  // Unnamed documents may appear only once per config; one document per patch
+  // keeps every module patch mergeable and overridable by later patches.
+  assert {
+    condition = alltrue(flatten([
+      for key in ["controlplane-cp1", "controlplane-cp2", "worker-w1"] : [
+        for p in talos_machine_configuration_apply.this[key].config_patches :
+        !strcontains("\n${p}", "\n---\n")
+      ]
+    ]))
+    error_message = "Every module patch must hold exactly one document."
+  }
+}
+
+run "addons_control_plane_metrics_etcd_documents" {
+  command = apply
+
+  override_data {
+    target = data.talos_machine_configuration.controlplane
+    values = {
+      machine_configuration = "version: v1alpha1\n---\napiVersion: v1alpha1\nkind: EtcdMemberConfig\n"
+    }
+  }
+
+  variables {
+    addons = { control_plane_metrics = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "factory.talos.dev/installer:v1.14.0" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  assert {
+    condition = [
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      yamldecode(p).extraArgs if try(yamldecode(p).kind, "") == "EtcdMemberConfig"
+    ] == [{ "listen-metrics-urls" = "http://0.0.0.0:2381" }]
+    error_message = "A base config with EtcdMemberConfig should get the etcd metrics flag as an EtcdMemberConfig document."
+  }
+
+  assert {
+    condition = !anytrue([
+      for p in talos_machine_configuration_apply.this["controlplane-cp1"].config_patches :
+      can(yamldecode(p).cluster)
+    ])
+    error_message = "Talos rejects .cluster.etcd next to EtcdMemberConfig."
+  }
+}
+
+run "validation_control_plane_metrics_allowed_subnets" {
+  command = plan
+
+  variables {
+    addons = { control_plane_metrics = { enabled = true, allowed_subnets = ["10.244.0.0"] } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "10.0.0.1" } }
+      }
+    }
+  }
+
+  expect_failures = [var.addons]
+}
+
+run "validation_control_plane_metrics_node_ip" {
+  command = plan
+
+  variables {
+    addons = { control_plane_metrics = { enabled = true } }
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "cp1.example" } }
+      }
+    }
+  }
+
+  expect_failures = [talos_machine_configuration_apply.this]
+}
+
+run "dns_node_address_without_control_plane_metrics" {
+  command = plan
+
+  variables {
+    node_groups = {
+      cp = {
+        role  = "controlplane"
+        image = { installer = "x" }
+        nodes = { cp1 = { ip_address = "cp1.example" } }
+      }
+    }
   }
 }
 
