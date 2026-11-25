@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/RocketPadPlatforms/talos-terraform/compare/v1.1.0...v1.2.0) (2026-11-25)
+
+
+### Features
+
+* **addons:** add control-plane metrics addon ([4f8c164](https://github.com/RocketPadPlatforms/talos-terraform/commit/4f8c164746c6268988dc36ced0152699e083251e))
+
 ## [1.1.0](https://github.com/RocketPadPlatforms/talos-terraform/compare/v1.0.1...v1.1.0) (2026-11-10)
 
 
