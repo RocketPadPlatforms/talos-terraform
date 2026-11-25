@@ -42,7 +42,7 @@ expose them more widely only after the first apply.
 
 ## Network exposure
 
-The module adds no firewall. By default every node accepts connections from
+The module adds no firewall (except the metrics rule below). By default every node accepts connections from
 any network it can reach, including:
 
 | Port | Service | Nodes |
@@ -52,6 +52,11 @@ any network it can reach, including:
 | `6443/tcp` | Kubernetes API | control planes |
 | `2379-2380/tcp` | etcd | control planes |
 | `10250/tcp` | kubelet | all |
+
+With the [`control_plane_metrics` addon](addons.md#control_plane_metrics) the
+control planes also serve metrics on `2381/tcp` (etcd, plain HTTP, no
+authentication), `10257/tcp` (controller-manager) and `10259/tcp` (scheduler).
+The addon limits these three ports to the node IPs and its `allowed_subnets`.
 
 Outside maintenance mode all of them use TLS and require authentication (client
 certificates, or tokens on the Kubernetes API and `trustd`), but limiting who

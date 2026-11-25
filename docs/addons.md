@@ -11,6 +11,7 @@ module "talos" {
     kubelet_cert_approver  = { enabled = true }
     metrics_server         = { enabled = true }
     local_path_provisioner = { enabled = true, default_storage_class = true }
+    control_plane_metrics  = { enabled = true }
   }
 }
 ```
@@ -69,6 +70,117 @@ config_patches = [
 
 `default_storage_class = true` marks the `local-path` StorageClass as the
 cluster default. Only one StorageClass should be default.
+
+## control_plane_metrics
+
+Makes the control-plane metrics that Talos keeps on loopback reachable for an
+in-cluster collector (Prometheus Operator, Grafana Alloy). It ships no
+`ServiceMonitor`: the CRDs do not exist at bootstrap.
+
+On control planes it sets:
+
+| Component | Setting | Port |
+| --- | --- | --- |
+| etcd | `listen-metrics-urls: http://0.0.0.0:2381` in `cluster.etcd.extraArgs`, or in `EtcdMemberConfig` when the generated config has one (Talos 1.15 contract) | `2381` (HTTP, no auth) |
+| kube-controller-manager | `bind-address: 0.0.0.0` in `KubeControllerManagerConfig` | `10257` (HTTPS, token) |
+| kube-scheduler | `bind-address: 0.0.0.0` in `KubeSchedulerConfig` | `10259` (HTTPS, token) |
+
+To change one of these values, patch the same document again (see
+[overriding module documents](config-patches.md#overriding-module-documents)).
+
+and installs headless discovery Services in `kube-system`, laid out like
+[kube-prometheus](https://github.com/prometheus-operator/kube-prometheus)'s
+kubeadm platform:
+
+| Service | Label `app.kubernetes.io/name` | Port name |
+| --- | --- | --- |
+| `kube-controller-manager-prometheus-discovery` | `kube-controller-manager` | `https-metrics` |
+| `kube-scheduler-prometheus-discovery` | `kube-scheduler` | `https-metrics` |
+| `kube-etcd-prometheus-discovery` | `etcd` | `http-metrics` |
+
+etcd runs outside Kubernetes, so its Service selects the controller-manager
+pods: they use the host network on every control plane, which gives the same
+endpoint addresses.
+
+### Firewall
+
+A `NetworkRuleConfig` named `control-plane-metrics-ingress` drops traffic to
+`2381`, `10257` and `10259` unless it comes from a node `ip_address` or from
+`allowed_subnets` (default `["10.244.0.0/16"]`, the Talos pod CIDR). All other
+ports keep their current behaviour. Set `allowed_subnets` when:
+
+- the cluster uses a different or additional (e.g. IPv6) pod CIDR;
+- a node's `ip_address` is not the address it uses inside the cluster (add the
+  node network).
+
+Every node `ip_address` must be an IP address while the addon is enabled. Add
+sources through `allowed_subnets`: patching `control-plane-metrics-ingress`
+with your own `ingress` replaces the whole list, node IPs included.
+
+Flannel masquerades pod traffic to the node IP, Cilium keeps the pod IP; the
+defaults cover both. Cilium's host firewall, if enabled, bypasses Talos rules.
+
+### Existing clusters
+
+The controller-manager and scheduler restart with the new address when the
+config is applied. Run the sync command afterwards so Talos tracks the
+Services.
+
+- Talos 1.14 (`cluster.etcd`): the config is applied without a reboot, and etcd
+  only opens the metrics port after the next one. Reboot the control planes one
+  at a time (`talosctl reboot -n <ip>`) and check etcd health in between.
+- Talos 1.15 contract (`EtcdMemberConfig`): etcd restarts as soon as the config
+  is applied, and Talos does not coordinate the restarts across nodes, so all
+  control planes may restart etcd at once. Enable the addon with
+  `apply_mode = "staged"`, then reboot the control planes one at a time.
+
+### Scraping
+
+Prometheus Operator / Grafana Alloy (`prometheus.operator.servicemonitors`):
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-scheduler
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-scheduler
+  endpoints:
+    - port: https-metrics
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        insecureSkipVerify: true # self-signed serving certificate
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: etcd
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: etcd
+  endpoints:
+    - port: http-metrics
+```
+
+The controller-manager works like the scheduler. The scraper's service account
+needs `get` on the non-resource URL `/metrics`.
+
+kube-prometheus-stack creates its own Services. Its controller-manager and
+scheduler selectors already match Talos, and it scrapes etcd on `2381`; only
+the etcd selector needs a value:
+
+```yaml
+kubeEtcd:
+  service:
+    selector:
+      component: kube-controller-manager
+```
 
 ## Lifecycle
 

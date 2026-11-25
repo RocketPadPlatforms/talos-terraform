@@ -14,7 +14,7 @@ For each node, patches apply from general to specific. Later patches win.
    4. `KubeNodeConfig` with the merged labels, annotations and taints (only if any are set)
    5. `KubeletConfig` with `serverTLSBootstrap` (when `kubelet_server_tls_bootstrap` is true, or the `kubelet_cert_approver` or `metrics_server` addon is enabled)
    6. `UserVolumeConfig` `local-path-provisioner` (when the `local_path_provisioner` addon is enabled)
-   7. Controlplanes only: the [Cilium](cilium.md) documents (`KubeFlannelCNIConfig` delete, `KubeProxyConfig` disabled, `KubeInlineManifestConfig` `cilium`), then one `KubeInlineManifestConfig` per enabled [addon](addons.md)
+   7. Controlplanes only: the [Cilium](cilium.md) documents (`KubeFlannelCNIConfig` delete, `KubeProxyConfig` disabled, `KubeInlineManifestConfig` `cilium`), then one `KubeInlineManifestConfig` per enabled [addon](addons.md), then, when the `control_plane_metrics` addon is enabled, the etcd `extraArgs` (`cluster.etcd`, or `EtcdMemberConfig` when the generated config has one), `KubeControllerManagerConfig`, `KubeSchedulerConfig` and `NetworkRuleConfig` `control-plane-metrics-ingress`
    8. `VolumeConfig` `STATE` and `EPHEMERAL` (when the group sets [`disk_encryption`](security.md#disk-encryption))
    9. `HostnameConfig` with the node's `hostname` and `auto` deleted (when the node sets [`hostname`](#hostnames))
 2. `config_patches` (cluster-wide)
@@ -45,10 +45,37 @@ config_patches = [
 
 Only the format above is supported. JSON6902 patches are not.
 
+## Overriding module documents
+
+Documents without a `name` field (`KubeSchedulerConfig`,
+`KubeControllerManagerConfig`, `KubeletConfig`, `EtcdMemberConfig`, ...) may
+appear only once in a machine configuration. Each `config_patches` entry is
+merged separately onto the generated config, matched by kind (and name), so a
+later patch of the same kind changes the module's document instead of adding a
+second one:
+
+```hcl
+config_patches = [
+  yamlencode({
+    apiVersion = "v1alpha1"
+    kind       = "KubeSchedulerConfig"
+    extraArgs  = { "bind-address" = "127.0.0.1" } # overrides the module's value
+  })
+]
+```
+
+Maps are merged key by key and lists are appended. To replace a document
+completely, patch it with `$patch: delete` first, then add the full document as
+a separate entry. Never put two documents of the same kind into one patch
+string, and never concatenate documents into a machine configuration by hand:
+Talos rejects the result with `duplicate document`.
+
 ## Legacy fields to documents
 
 The module emits only the new documents (`machine.certSANs` is the exception: it
-has no replacement and stays in `v1alpha1`). Legacy `v1alpha1` fields in your
+has no replacement and stays in `v1alpha1`; so does `cluster.etcd` from the
+`control_plane_metrics` addon until the generated config contains
+`EtcdMemberConfig`, the Talos 1.15 contract). Legacy `v1alpha1` fields in your
 patches may be rejected or ignored by Talos 1.14. Move them as follows (see the
 [v1.14 document map](https://docs.siderolabs.com/talos/v1.14/reference/configuration/document-map)):
 
